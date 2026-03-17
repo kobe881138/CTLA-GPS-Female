@@ -8,7 +8,7 @@ import os
 import shutil
 
 # ==========================================
-# 🌟 終極防破圖系統：解決 Noto Sans 命名衝突 Bug
+# 🌟 終極防破圖系統：暴力清快取 + 絕對路徑字體
 # ==========================================
 cache_dir = mpl.get_cachedir()
 if os.path.exists(cache_dir):
@@ -17,24 +17,15 @@ if os.path.exists(cache_dir):
 current_dir = os.path.dirname(os.path.abspath(__file__))
 font_path = os.path.join(current_dir, "NotoSansTC-Regular.ttf")
 
-# 🚨 終極解法：把我們在 packages.txt 安裝的 'WenQuanYi Zen Hei' 排在第一順位！
-# 這樣就能完美避開 'Noto Sans' 的英文撞名問題
-font_list = ['WenQuanYi Zen Hei', 'Microsoft JhengHei', 'PingFang HK', 'Noto Sans CJK TC']
-
 if os.path.exists(font_path):
     fm.fontManager.addfont(font_path)
     prop = fm.FontProperties(fname=font_path)
-    font_name = prop.get_name()
-    
-    # 避免撞名，我們把 Noto Sans 塞到清單後面，讓文泉驛正黑體優先發揮作用
-    if font_name not in font_list:
-        font_list.append(font_name)
-    font_status_msg = f"✅ 字體已載入 (防衝突模式啟動)"
+    plt.rcParams['font.family'] = prop.get_name()
+    plt.rcParams['font.sans-serif'] = [prop.get_name(), 'sans-serif']
 else:
-    font_status_msg = "⚠️ 找不到本機字體檔，使用雲端備用字體"
+    st.warning("⚠️ 找不到 NotoSansTC-Regular.ttf 字體檔！請確認已上傳至 GitHub。目前暫時使用系統備用字體。")
+    plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'Arial Unicode MS', 'sans-serif']
 
-font_list.append('sans-serif')
-plt.rcParams['font.sans-serif'] = font_list
 plt.rcParams['axes.unicode_minus'] = False
 
 # ==========================================
@@ -66,11 +57,6 @@ else:
     df['Date'] = df['Session'].astype(str).apply(lambda x: x.split()[0])
     
     st.sidebar.title("🥍 女網戰情室導覽")
-    
-    # 💡 在側邊欄顯示字體載入狀態，幫助我們除錯
-    st.sidebar.caption(f"系統狀態: {font_status_msg}")
-    st.sidebar.markdown("---")
-    
     page_mode = st.sidebar.radio(
         "📌 選擇分析模式：", 
         ["📊 團隊總覽 (Team Dashboard)", "👤 個人報告 (Player Profile)"]
@@ -111,6 +97,9 @@ else:
                 yval = bar.get_height()
                 if pd.notna(yval) and yval > 0:
                     ax1.text(bar.get_x() + bar.get_width()/2, yval/2 + 200, int(yval), ha='center', va='center', color='white', fontweight='bold', fontsize=12)
+            
+            # 🎯 調整 Y 軸：0 到 10000
+            ax1.set_ylim(0, 10000)
             ax1.legend()
             st.pyplot(fig1)
 
@@ -129,6 +118,9 @@ else:
                     yval = bar.get_height()
                     if pd.notna(yval) and yval > 0:
                         ax2.text(bar.get_x() + bar.get_width()/2, yval + 1, f"{yval:.1f}", ha='center', va='bottom', fontweight='bold')
+                
+                # 🎯 調整 Y 軸：0 到 100
+                ax2.set_ylim(0, 100)
                 ax2.legend(loc='lower right')
                 st.pyplot(fig2)
 
@@ -166,6 +158,9 @@ else:
                         
                     ax3_q.set_xticks(x)
                     ax3_q.set_xticklabels(players)
+                    
+                    # 🎯 調整 Y 軸：0 到 1500
+                    ax3_q.set_ylim(0, 1500)
                     ax3_q.legend(loc='upper right', fontsize='small')
                     st.pyplot(fig3_q)
                 else:
@@ -200,6 +195,11 @@ else:
 
                 ax4.set_xlabel('HSD (>4m/s) Ratio (%)', fontweight='bold')
                 ax4.set_ylabel('Top Speed (m/s)', fontweight='bold')
+                
+                # 🎯 調整 X 軸：0 到 25，Y 軸：0 到 10
+                ax4.set_xlim(0, 25)
+                ax4.set_ylim(0, 10)
+                
                 ax4.legend(loc='upper left', bbox_to_anchor=(1, 1))
                 st.pyplot(fig4)
         else:
@@ -237,9 +237,6 @@ else:
 
             col_radar, col_bar = st.columns([1, 1.5])
 
-            # ==========================================
-            # 🎯 雷達圖：對標當日團隊平均 (Z-Score 標準化)
-            # ==========================================
             with col_radar:
                 st.markdown(f"##### 📍 六角雷達圖：對標當日團隊平均")
                 radar_date = st.selectbox("📅 選擇雷達圖日期：", player_dates_with_total, index=0)
@@ -289,9 +286,6 @@ else:
                 ax_r.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
                 st.pyplot(fig_r)
 
-            # ==========================================
-            # 📊 長條圖：連動選擇 (解決同日疊加 Bug)
-            # ==========================================
             with col_bar:
                 st.markdown("##### 📈 歷史進步軌跡")
                 
@@ -348,6 +342,16 @@ else:
                         axes[i].set_title(title, fontweight='bold', fontsize=11)
                         axes[i].spines['top'].set_visible(False)
                         axes[i].spines['right'].set_visible(False)
+                        
+                        # 🎯 針對四個圖表分別鎖定不同的 Y 軸範圍
+                        if 'Total Distance' in title:
+                            axes[i].set_ylim(0, 10000)
+                        elif 'Average Speed' in title:
+                            axes[i].set_ylim(0, 100)
+                        elif 'Max Speed' in title:
+                            axes[i].set_ylim(0, 12)
+                        elif 'HSD Ratio' in title:
+                            axes[i].set_ylim(0, 20)
                         
                         for bar in bars:
                             yval = bar.get_height()
