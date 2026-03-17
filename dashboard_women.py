@@ -1,22 +1,35 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import os
+import shutil
 
 # ==========================================
-# 🌟 雙重防破圖系統：本機端字體 + 雲端字體備援
+# 🌟 終極殺手鐧：暴力清除快取 + 強制套用本機字體
 # ==========================================
+# 1. 暴力清除 Matplotlib 頑固的舊快取記憶
+cache_dir = mpl.get_cachedir()
+if os.path.exists(cache_dir):
+    shutil.rmtree(cache_dir, ignore_errors=True)
+
+# 2. 強制載入同資料夾下的字體檔
 current_dir = os.path.dirname(os.path.abspath(__file__))
 font_path = os.path.join(current_dir, "NotoSansTC-Regular.ttf")
 
 if os.path.exists(font_path):
+    # 把字體註冊進系統
     fm.fontManager.addfont(font_path)
     prop = fm.FontProperties(fname=font_path)
+    
+    # 3. 雙管齊下：直接把整個圖表的預設家族改成這個字體
+    plt.rcParams['font.family'] = prop.get_name()
     plt.rcParams['font.sans-serif'] = [prop.get_name(), 'sans-serif']
 else:
-    plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'Arial Unicode MS', 'sans-serif']
+    # 如果真的沒讀到檔案，直接在網頁最上方噴出紅色警告，方便我們抓蟲！
+    st.error(f"❌ 嚴重警告：程式找不到字體檔案！請確認 GitHub 裡面有沒有 [NotoSansTC-Regular.ttf] 這個檔案。")
 
 plt.rcParams['axes.unicode_minus'] = False
 
