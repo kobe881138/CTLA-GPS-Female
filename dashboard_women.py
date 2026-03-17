@@ -8,9 +8,9 @@ import os
 import shutil
 
 # ==========================================
-# 🌟 終極防破圖系統：暴力清快取 + 關閉濾鏡參數
+# 🌟 終極防破圖系統：暴力清快取 + 絕對路徑字體
 # ==========================================
-# 1. 暴力清除 Matplotlib 舊快取
+# 1. 暴力清除 Matplotlib 舊快取，強迫它忘記沒有中文字體的記憶
 cache_dir = mpl.get_cachedir()
 if os.path.exists(cache_dir):
     shutil.rmtree(cache_dir, ignore_errors=True)
@@ -100,7 +100,7 @@ else:
                 if pd.notna(yval) and yval > 0:
                     ax1.text(bar.get_x() + bar.get_width()/2, yval/2 + 200, int(yval), ha='center', va='center', color='white', fontweight='bold', fontsize=12)
             ax1.legend()
-            st.pyplot(fig1, theme=None) # 🌟 加上 theme=None
+            st.pyplot(fig1)
 
             col1, col2 = st.columns(2)
             with col1:
@@ -118,7 +118,7 @@ else:
                     if pd.notna(yval) and yval > 0:
                         ax2.text(bar.get_x() + bar.get_width()/2, yval + 1, f"{yval:.1f}", ha='center', va='bottom', fontweight='bold')
                 ax2.legend(loc='lower right')
-                st.pyplot(fig2, theme=None) # 🌟 加上 theme=None
+                st.pyplot(fig2)
 
             with col2:
                 st.subheader("3️⃣ 單節/分段 體能維持率")
@@ -155,7 +155,7 @@ else:
                     ax3_q.set_xticks(x)
                     ax3_q.set_xticklabels(players)
                     ax3_q.legend(loc='upper right', fontsize='small')
-                    st.pyplot(fig3_q, theme=None) # 🌟 加上 theme=None
+                    st.pyplot(fig3_q)
                 else:
                     st.info("💡 此時段無單節資料。")
 
@@ -189,7 +189,7 @@ else:
                 ax4.set_xlabel('HSD (>4m/s) Ratio (%)', fontweight='bold')
                 ax4.set_ylabel('Top Speed (m/s)', fontweight='bold')
                 ax4.legend(loc='upper left', bbox_to_anchor=(1, 1))
-                st.pyplot(fig4, theme=None) # 🌟 加上 theme=None
+                st.pyplot(fig4)
         else:
             st.warning("此時段沒有數據喔！")
 
@@ -275,7 +275,7 @@ else:
                 ax_r.fill(angles, player_ratios, color='#4a86e8', alpha=0.3)
 
                 ax_r.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
-                st.pyplot(fig_r, theme=None) # 🌟 加上 theme=None
+                st.pyplot(fig_r)
 
             # ==========================================
             # 📊 長條圖：連動選擇 (解決同日疊加 Bug)
@@ -345,4 +345,4 @@ else:
                                 axes[i].text(bar.get_x() + bar.get_width()/2, yval + (yval*0.02), format_str, ha='center', va='bottom', fontweight='bold', fontsize=10)
 
                     plt.tight_layout()
-                    st.pyplot(fig_b, theme=None) # 🌟 加上 theme=None
+                    st.pyplot(fig_b)
