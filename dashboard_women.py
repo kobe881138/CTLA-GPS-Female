@@ -7,14 +7,23 @@ import urllib.request
 import os
 
 # ==========================================
-# 🌟 核彈級防破圖：自動下載並載入 Google 官方中文字體
+# 🌟 核彈級防破圖：自動下載並載入 Google 官方中文字體 (突破 GitHub 阻擋版)
 # ==========================================
 @st.cache_resource
 def load_chinese_font():
     font_url = "https://github.com/google/fonts/raw/main/ofl/notosanstc/NotoSansTC-Regular.ttf"
     font_path = "NotoSansTC-Regular.ttf"
+    
     if not os.path.exists(font_path):
-        urllib.request.urlretrieve(font_url, font_path)
+        try:
+            # 🌟 關鍵修正：幫 Python 戴上「我是正常瀏覽器」的面具
+            req = urllib.request.Request(font_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req) as response, open(font_path, 'wb') as out_file:
+                out_file.write(response.read())
+        except Exception as e:
+            st.error(f"字體下載失敗，將使用預設字體。錯誤訊息: {e}")
+            return 'sans-serif' # 如果真的衰到連偽裝都被擋，至少讓圖表能跑，不要當機
+    
     fm.fontManager.addfont(font_path)
     prop = fm.FontProperties(fname=font_path)
     return prop.get_name()
