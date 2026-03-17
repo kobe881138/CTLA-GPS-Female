@@ -3,41 +3,20 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
-import urllib.request
 import os
 
 # ==========================================
-# 🌟 核彈級防破圖：終極穩定字體下載版
+# 🌟 100% 成功率字體載入法：直接讀取 GitHub 裡的字體檔
 # ==========================================
-@st.cache_resource
-def load_chinese_font():
-    # 改用更穩定的字體下載連結 (Google Fonts 官方存放庫)
-    font_url = "https://fonts.gstatic.com/s/notosanstc/v35/-Lp79pAyL_67zFvK0v1Pz9oDDXpY.ttf"
-    font_path = "NotoSansTC-Regular.ttf"
-    
-    if not os.path.exists(font_path):
-        try:
-            # 加入偽裝 headers
-            req = urllib.request.Request(font_url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req) as response, open(font_path, 'wb') as out_file:
-                out_file.write(response.read())
-        except Exception as e:
-            # 如果還是失敗，嘗試另一個備用載點 (由字體社群維護的 GitHub 靜態頁)
-            try:
-                backup_url = "https://github.com/google/fonts/raw/main/ofl/notosanstc/NotoSansTC-Regular.ttf"
-                req = urllib.request.Request(backup_url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req) as response, open(font_path, 'wb') as out_file:
-                    out_file.write(response.read())
-            except:
-                st.error(f"⚠️ 字體載入失敗：{e}")
-                return 'sans-serif'
-    
+font_path = "NotoSansTC-Regular.ttf"
+if os.path.exists(font_path):
     fm.fontManager.addfont(font_path)
     prop = fm.FontProperties(fname=font_path)
-    return prop.get_name()
+    plt.rcParams['font.sans-serif'] = [prop.get_name(), 'sans-serif']
+else:
+    st.warning("⚠️ 找不到 NotoSansTC-Regular.ttf 字體檔，請確認已上傳至 GitHub。目前暫時使用預設字體。")
+    plt.rcParams['font.sans-serif'] = ['sans-serif']
 
-font_name = load_chinese_font()
-plt.rcParams['font.sans-serif'] = [font_name, 'sans-serif']
 plt.rcParams['axes.unicode_minus'] = False
 
 # ==========================================
@@ -97,11 +76,17 @@ else:
             fig1, ax1 = plt.subplots(figsize=(12, 3.5))
             bars1 = ax1.bar(df_plot['Player'], df_plot['Total Distance (m)'], color='#e06666', width=0.5)
             ax1.axhline(y=NCAA_BASELINES['Average']['dist'], color='gold', linestyle='-', linewidth=2, label='NCAA Avg')
-            ax1.axhline(y=df_plot['Total Distance (m)'].mean(), color='blue', linestyle='--', label='Team Avg')
+            
+            # 加上 pd.notna() 防護罩，避免全隊沒數據時當機
+            team_avg_dist = df_plot['Total Distance (m)'].mean()
+            if pd.notna(team_avg_dist):
+                ax1.axhline(y=team_avg_dist, color='blue', linestyle='--', label='Team Avg')
             
             for bar in bars1:
                 yval = bar.get_height()
-                ax1.text(bar.get_x() + bar.get_width()/2, yval/2 + 200, int(yval), ha='center', va='center', color='white', fontweight='bold', fontsize=12)
+                # 🌟 加上防護罩：只有當 yval 存在且大於 0 時，才印出數字
+                if pd.notna(yval) and yval > 0:
+                    ax1.text(bar.get_x() + bar.get_width()/2, yval/2 + 200, int(yval), ha='center', va='center', color='white', fontweight='bold', fontsize=12)
             ax1.legend()
             st.pyplot(fig1)
 
@@ -111,10 +96,15 @@ else:
                 fig2, ax2 = plt.subplots(figsize=(6, 4))
                 bars2 = ax2.bar(df_plot['Player'], df_plot['Avg Speed (m/min)'], color='#c27ba0', width=0.5)
                 ax2.axhline(y=NCAA_BASELINES['Average']['avg_spd'], color='gold', linestyle='-', linewidth=2, label='NCAA Avg')
-                ax2.axhline(y=df_plot['Avg Speed (m/min)'].mean(), color='blue', linestyle='--', alpha=0.5, label='Team Avg')
+                
+                team_avg_spd = df_plot['Avg Speed (m/min)'].mean()
+                if pd.notna(team_avg_spd):
+                    ax2.axhline(y=team_avg_spd, color='blue', linestyle='--', alpha=0.5, label='Team Avg')
+                    
                 for bar in bars2:
                     yval = bar.get_height()
-                    ax2.text(bar.get_x() + bar.get_width()/2, yval + 1, f"{yval:.1f}", ha='center', va='bottom', fontweight='bold')
+                    if pd.notna(yval) and yval > 0:
+                        ax2.text(bar.get_x() + bar.get_width()/2, yval + 1, f"{yval:.1f}", ha='center', va='bottom', fontweight='bold')
                 ax2.legend(loc='lower right')
                 st.pyplot(fig2)
 
@@ -143,9 +133,13 @@ else:
                         bars_q = ax3_q.bar(x + offset, y_vals, width, label=f"{q_sess}", color=colors[i%len(colors)])
                         for bar in bars_q:
                             h = bar.get_height()
-                            if h > 0: ax3_q.text(bar.get_x() + bar.get_width()/2, h/2, int(h), ha='center', va='center', color='white', fontsize=10, fontweight='bold', rotation=90)
+                            if pd.notna(h) and h > 0:
+                                ax3_q.text(bar.get_x() + bar.get_width()/2, h/2, int(h), ha='center', va='center', color='white', fontsize=10, fontweight='bold', rotation=90)
                     
-                    ax3_q.axhline(df_q['Total Distance (m)'].mean(), color='blue', linestyle='--', label='Session Avg')
+                    team_avg_q_dist = df_q['Total Distance (m)'].mean()
+                    if pd.notna(team_avg_q_dist):
+                        ax3_q.axhline(team_avg_q_dist, color='blue', linestyle='--', label='Session Avg')
+                        
                     ax3_q.set_xticks(x)
                     ax3_q.set_xticklabels(players)
                     ax3_q.legend(loc='upper right', fontsize='small')
@@ -166,11 +160,13 @@ else:
                 ax4.scatter(x_data, y_data, color='#e06666', s=150, zorder=5, label='Players')
                 for i, player in enumerate(df_plot['Player']):
                     pos = df_plot['Position'].iloc[i]
-                    ax4.text(x_data[i] + 0.2, y_data[i], f"{player}({pos})", fontsize=9, fontweight='bold', va='center')
+                    if pd.notna(x_data[i]) and pd.notna(y_data[i]):
+                        ax4.text(x_data[i] + 0.2, y_data[i], f"{player}({pos})", fontsize=9, fontweight='bold', va='center')
 
-                ax4.scatter(session_avg_hsd, session_avg_top, color='blue', marker='P', s=200, zorder=6, label='Session Avg')
-                ax4.axvline(x=session_avg_hsd, color='blue', linestyle='--', alpha=0.3)
-                ax4.axhline(y=session_avg_top, color='blue', linestyle='--', alpha=0.3)
+                if pd.notna(session_avg_hsd) and pd.notna(session_avg_top):
+                    ax4.scatter(session_avg_hsd, session_avg_top, color='blue', marker='P', s=200, zorder=6, label='Session Avg')
+                    ax4.axvline(x=session_avg_hsd, color='blue', linestyle='--', alpha=0.3)
+                    ax4.axhline(y=session_avg_top, color='blue', linestyle='--', alpha=0.3)
 
                 pos_colors = {'A': '#e69138', 'M': '#38761d', 'D': '#1155cc'}
                 for p in ['A', 'M', 'D']:
@@ -197,8 +193,6 @@ else:
         
         df_total_only = df[df['Session'].str.lower().str.contains('total')]
         player_dates_with_total = df_total_only[df_total_only['Player'] == selected_player]['Date'].dropna().unique().tolist()
-        
-        # 🌟 修復關鍵：把這行從長條圖區塊移出來，確保所有歷史日期都被定義
         all_total_dates = df_total_only['Date'].dropna().unique().tolist()
         
         if not player_dates_with_total:
@@ -219,7 +213,7 @@ else:
 
             col_radar, col_bar = st.columns([1, 1.5])
 
-            # 🎯 雷達圖：對標 NCAA
+            # 🎯 雷達圖
             with col_radar:
                 st.markdown(f"##### 📍 六角雷達圖")
                 radar_date = st.selectbox("📅 選擇雷達圖日期：", player_dates_with_total, index=0)
@@ -230,10 +224,10 @@ else:
                 categories = ['Total Distance', 'Average Speed', 'Max Speed', 'HSD Ratio']
                 N = len(categories)
                 
-                p_dist = player_radar['Total Distance (m)'] / ncaa_target['dist']
-                p_avg_spd = player_radar['Avg Speed (m/min)'] / ncaa_target['avg_spd']
-                p_top_spd = player_radar['Top Speed (m/s)'] / ncaa_target['top_spd']
-                p_hsd = (player_radar['HSD Ratio']*100) / ncaa_target['hsd_ratio']
+                p_dist = player_radar['Total Distance (m)'] / ncaa_target['dist'] if pd.notna(player_radar['Total Distance (m)']) else 0
+                p_avg_spd = player_radar['Avg Speed (m/min)'] / ncaa_target['avg_spd'] if pd.notna(player_radar['Avg Speed (m/min)']) else 0
+                p_top_spd = player_radar['Top Speed (m/s)'] / ncaa_target['top_spd'] if pd.notna(player_radar['Top Speed (m/s)']) else 0
+                p_hsd = (player_radar['HSD Ratio']*100) / ncaa_target['hsd_ratio'] if pd.notna(player_radar['HSD Ratio']) else 0
                 
                 player_ratios = [p_dist, p_avg_spd, p_top_spd, p_hsd]
                 player_ratios += player_ratios[:1] 
@@ -261,7 +255,7 @@ else:
                 ax_r.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
                 st.pyplot(fig_r)
 
-           # 📊 長條圖：連動選擇
+            # 📊 長條圖
             with col_bar:
                 st.markdown("##### 📈 歷史進步軌跡")
                 
@@ -269,7 +263,6 @@ else:
                 with col_b1: 
                     player_selected_date = st.selectbox("📅 當前表現 (Current)：", player_dates_with_total)
                 with col_b2:
-                    # 🌟 修復：拿掉原本自作聰明的過濾條件，讓所有日期都能自由選擇！
                     selected_baseline = st.selectbox("📉 比較基準 (Baseline)：", ["NCAA Benchmark"] + all_total_dates)
                 
                 player_current_bar = df_total_only[(df_total_only['Player'] == selected_player) & (df_total_only['Date'] == player_selected_date)].iloc[0]
@@ -299,8 +292,10 @@ else:
                 
                 labels = [baseline_label, current_label]
                 for i, (title, col_name, color_curr, color_past) in enumerate(metrics):
-                    val_past = past_avg[col_name]
-                    val_curr = player_current_bar[col_name]
+                    # 抓取數值並處理潛在的 NaN
+                    val_past = past_avg[col_name] if pd.notna(past_avg[col_name]) else 0
+                    val_curr = player_current_bar[col_name] if pd.notna(player_current_bar[col_name]) else 0
+                    
                     if 'Ratio' in col_name:
                         val_past *= 100
                         val_curr *= 100
@@ -309,10 +304,13 @@ else:
                     axes[i].set_title(title, fontweight='bold', fontsize=11)
                     axes[i].spines['top'].set_visible(False)
                     axes[i].spines['right'].set_visible(False)
+                    
                     for bar in bars:
                         yval = bar.get_height()
-                        format_str = f"{int(yval)}" if 'Distance' in title else f"{yval:.1f}"
-                        axes[i].text(bar.get_x() + bar.get_width()/2, yval + (yval*0.02), format_str, ha='center', va='bottom', fontweight='bold', fontsize=10)
+                        # 🌟 加上防護罩
+                        if pd.notna(yval) and yval > 0:
+                            format_str = f"{int(yval)}" if 'Distance' in title else f"{yval:.1f}"
+                            axes[i].text(bar.get_x() + bar.get_width()/2, yval + (yval*0.02), format_str, ha='center', va='bottom', fontweight='bold', fontsize=10)
 
                 plt.tight_layout()
                 st.pyplot(fig_b)
