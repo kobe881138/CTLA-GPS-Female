@@ -8,9 +8,9 @@ import os
 import shutil
 
 # ==========================================
-# 🌟 終極殺手鐧：暴力清除快取 + 強制套用本機字體
+# 🌟 終極防破圖系統：暴力清快取 + 關閉濾鏡參數
 # ==========================================
-# 1. 暴力清除 Matplotlib 頑固的舊快取記憶
+# 1. 暴力清除 Matplotlib 舊快取
 cache_dir = mpl.get_cachedir()
 if os.path.exists(cache_dir):
     shutil.rmtree(cache_dir, ignore_errors=True)
@@ -20,16 +20,13 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 font_path = os.path.join(current_dir, "NotoSansTC-Regular.ttf")
 
 if os.path.exists(font_path):
-    # 把字體註冊進系統
     fm.fontManager.addfont(font_path)
     prop = fm.FontProperties(fname=font_path)
-    
-    # 3. 雙管齊下：直接把整個圖表的預設家族改成這個字體
     plt.rcParams['font.family'] = prop.get_name()
     plt.rcParams['font.sans-serif'] = [prop.get_name(), 'sans-serif']
 else:
-    # 如果真的沒讀到檔案，直接在網頁最上方噴出紅色警告，方便我們抓蟲！
-    st.error(f"❌ 嚴重警告：程式找不到字體檔案！請確認 GitHub 裡面有沒有 [NotoSansTC-Regular.ttf] 這個檔案。")
+    st.warning("⚠️ 找不到 NotoSansTC-Regular.ttf 字體檔！請確認已上傳至 GitHub。目前暫時使用系統備用字體。")
+    plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'Arial Unicode MS', 'sans-serif']
 
 plt.rcParams['axes.unicode_minus'] = False
 
@@ -56,7 +53,7 @@ df = load_data('Cleaned_GPS_Data_Women.csv')
 if df is None:
     st.error("❌ 找不到資料！請確認 Cleaned_GPS_Data_Women.csv 是否存在。")
 else:
-    # 🌟 終極殺蟲劑：強制過濾掉任何含有 '#' 號的幽靈球員，解決快取死當問題
+    # 🌟 終極殺蟲劑：強制過濾掉任何含有 '#' 號的幽靈球員
     df = df[~df['Player'].astype(str).str.contains('#')]
     
     df['Date'] = df['Session'].astype(str).apply(lambda x: x.split()[0])
@@ -103,7 +100,7 @@ else:
                 if pd.notna(yval) and yval > 0:
                     ax1.text(bar.get_x() + bar.get_width()/2, yval/2 + 200, int(yval), ha='center', va='center', color='white', fontweight='bold', fontsize=12)
             ax1.legend()
-            st.pyplot(fig1)
+            st.pyplot(fig1, theme=None) # 🌟 加上 theme=None
 
             col1, col2 = st.columns(2)
             with col1:
@@ -121,7 +118,7 @@ else:
                     if pd.notna(yval) and yval > 0:
                         ax2.text(bar.get_x() + bar.get_width()/2, yval + 1, f"{yval:.1f}", ha='center', va='bottom', fontweight='bold')
                 ax2.legend(loc='lower right')
-                st.pyplot(fig2)
+                st.pyplot(fig2, theme=None) # 🌟 加上 theme=None
 
             with col2:
                 st.subheader("3️⃣ 單節/分段 體能維持率")
@@ -158,7 +155,7 @@ else:
                     ax3_q.set_xticks(x)
                     ax3_q.set_xticklabels(players)
                     ax3_q.legend(loc='upper right', fontsize='small')
-                    st.pyplot(fig3_q)
+                    st.pyplot(fig3_q, theme=None) # 🌟 加上 theme=None
                 else:
                     st.info("💡 此時段無單節資料。")
 
@@ -192,7 +189,7 @@ else:
                 ax4.set_xlabel('HSD (>4m/s) Ratio (%)', fontweight='bold')
                 ax4.set_ylabel('Top Speed (m/s)', fontweight='bold')
                 ax4.legend(loc='upper left', bbox_to_anchor=(1, 1))
-                st.pyplot(fig4)
+                st.pyplot(fig4, theme=None) # 🌟 加上 theme=None
         else:
             st.warning("此時段沒有數據喔！")
 
@@ -224,7 +221,7 @@ else:
             selected_ncaa = st.sidebar.selectbox("長條圖比較 NCAA 對象：", ncaa_options, index=default_index)
             
             st.write("---")
-            st.subheader(f"🛡️ {selected_player} (註冊位置: {raw_pos}) - 個人表現分析")
+            st.subheader(f"🛡️ {selected_player} (註冊位置: {raw_pos} | 長條圖當前對標: NCAA {selected_ncaa}) - 個人表現分析")
 
             col_radar, col_bar = st.columns([1, 1.5])
 
@@ -235,7 +232,6 @@ else:
                 st.markdown(f"##### 📍 六角雷達圖：對標當日團隊平均")
                 radar_date = st.selectbox("📅 選擇雷達圖日期：", player_dates_with_total, index=0)
                 
-                # 抓取該日的團隊平均值與標準差
                 team_radar_df = df_total_only[df_total_only['Date'] == radar_date]
                 team_mean = team_radar_df[['Total Distance (m)', 'Avg Speed (m/min)', 'Top Speed (m/s)', 'HSD Ratio']].mean()
                 team_std = team_radar_df[['Total Distance (m)', 'Avg Speed (m/min)', 'Top Speed (m/s)', 'HSD Ratio']].std().replace(0, 1).fillna(1)
@@ -245,7 +241,6 @@ else:
                 categories = ['Total Distance', 'Average Speed', 'Max Speed', 'HSD Ratio']
                 N = len(categories)
                 
-                # 計算 Z-Score
                 def calc_z(col):
                     if pd.isna(player_radar[col]) or pd.isna(team_mean[col]): return 0
                     z = (player_radar[col] - team_mean[col]) / team_std[col]
@@ -258,7 +253,7 @@ else:
                 
                 player_ratios = [p_dist, p_avg_spd, p_top_spd, p_hsd]
                 player_ratios += player_ratios[:1] 
-                team_ratios = [0, 0, 0, 0, 0] # 團隊平均線在正中間 0 的位置
+                team_ratios = [0, 0, 0, 0, 0] 
                 
                 angles = [n / float(N) * 2 * np.pi for n in range(N)]
                 angles += angles[:1]
@@ -280,7 +275,7 @@ else:
                 ax_r.fill(angles, player_ratios, color='#4a86e8', alpha=0.3)
 
                 ax_r.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
-                st.pyplot(fig_r)
+                st.pyplot(fig_r, theme=None) # 🌟 加上 theme=None
 
             # ==========================================
             # 📊 長條圖：連動選擇 (解決同日疊加 Bug)
@@ -296,7 +291,7 @@ else:
                 
                 player_current_bar = df_total_only[(df_total_only['Player'] == selected_player) & (df_total_only['Date'] == player_selected_date)].iloc[0]
                 
-                # 🌟 解決疊加 Bug：在標籤後面加上字樣，強迫 Python 認定這是兩根不同的柱子！
+                # 🌟 解決疊加 Bug：在標籤後方加上字樣
                 current_label = f"{player_selected_date} (當前)"
                 can_plot = False
                 
@@ -350,4 +345,4 @@ else:
                                 axes[i].text(bar.get_x() + bar.get_width()/2, yval + (yval*0.02), format_str, ha='center', va='bottom', fontweight='bold', fontsize=10)
 
                     plt.tight_layout()
-                    st.pyplot(fig_b)
+                    st.pyplot(fig_b, theme=None) # 🌟 加上 theme=None
