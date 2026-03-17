@@ -1,34 +1,44 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
 import os
 import shutil
+import matplotlib as mpl
 
 # ==========================================
-# 🌟 終極防破圖系統：暴力清快取 + 絕對路徑字體
+# 🌟 終極防破圖系統第一步：在警衛上班前，先撕掉舊名單 (清除快取)
+# 注意：這段必須寫在 import pyplot 之前！
 # ==========================================
-# 1. 暴力清除 Matplotlib 舊快取，強迫它忘記沒有中文字體的記憶
 cache_dir = mpl.get_cachedir()
 if os.path.exists(cache_dir):
     shutil.rmtree(cache_dir, ignore_errors=True)
 
-# 2. 強制載入同資料夾下的字體檔
+# 舊記憶清除後，現在才讓 pyplot 上班，強迫它重新掃描環境
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+
+# ==========================================
+# 🌟 終極防破圖系統第二步：強制註冊本機字體
+# ==========================================
 current_dir = os.path.dirname(os.path.abspath(__file__))
 font_path = os.path.join(current_dir, "NotoSansTC-Regular.ttf")
 
+font_status_msg = ""
 if os.path.exists(font_path):
     fm.fontManager.addfont(font_path)
     prop = fm.FontProperties(fname=font_path)
-    plt.rcParams['font.family'] = prop.get_name()
-    plt.rcParams['font.sans-serif'] = [prop.get_name(), 'sans-serif']
+    font_name = prop.get_name()
+    
+    # 絕對強制覆蓋字體設定
+    plt.rcParams['font.family'] = font_name
+    plt.rcParams['axes.unicode_minus'] = False
+    font_status_msg = f"✅ 成功載入字體：{font_name}"
 else:
-    st.warning("⚠️ 找不到 NotoSansTC-Regular.ttf 字體檔！請確認已上傳至 GitHub。目前暫時使用系統備用字體。")
+    # 備用方案
+    plt.rcParams['font.family'] = 'sans-serif'
     plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'Arial Unicode MS', 'sans-serif']
-
-plt.rcParams['axes.unicode_minus'] = False
+    plt.rcParams['axes.unicode_minus'] = False
+    font_status_msg = "⚠️ 找不到 ttf 檔案，使用系統備用字體"
 
 # ==========================================
 # 🌟 NCAA 女子長曲棍球基準數據庫
@@ -59,6 +69,11 @@ else:
     df['Date'] = df['Session'].astype(str).apply(lambda x: x.split()[0])
     
     st.sidebar.title("🥍 女網戰情室導覽")
+    
+    # 💡 在側邊欄顯示字體載入狀態，幫助我們除錯
+    st.sidebar.caption(f"系統狀態: {font_status_msg}")
+    st.sidebar.markdown("---")
+    
     page_mode = st.sidebar.radio(
         "📌 選擇分析模式：", 
         ["📊 團隊總覽 (Team Dashboard)", "👤 個人報告 (Player Profile)"]
@@ -291,7 +306,6 @@ else:
                 
                 player_current_bar = df_total_only[(df_total_only['Player'] == selected_player) & (df_total_only['Date'] == player_selected_date)].iloc[0]
                 
-                # 🌟 解決疊加 Bug：在標籤後方加上字樣
                 current_label = f"{player_selected_date} (當前)"
                 can_plot = False
                 
