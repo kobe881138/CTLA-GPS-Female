@@ -6,16 +6,18 @@ import matplotlib.font_manager as fm
 import os
 
 # ==========================================
-# 🌟 100% 成功率字體載入法：直接讀取 GitHub 裡的字體檔
+# 🌟 雙重防破圖系統：本機端字體 + 雲端字體備援
 # ==========================================
-font_path = "NotoSansTC-Regular.ttf"
+current_dir = os.path.dirname(os.path.abspath(__file__))
+font_path = os.path.join(current_dir, "NotoSansTC-Regular.ttf")
+
 if os.path.exists(font_path):
     fm.fontManager.addfont(font_path)
     prop = fm.FontProperties(fname=font_path)
     plt.rcParams['font.sans-serif'] = [prop.get_name(), 'sans-serif']
 else:
-    st.warning("⚠️ 找不到 NotoSansTC-Regular.ttf 字體檔，請確認已上傳至 GitHub。目前暫時使用預設字體。")
-    plt.rcParams['font.sans-serif'] = ['sans-serif']
+    # 如果找不到 ttf，就去抓 packages.txt 安裝的 Linux 系統字體
+    plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'Arial Unicode MS', 'sans-serif']
 
 plt.rcParams['axes.unicode_minus'] = False
 
@@ -77,14 +79,12 @@ else:
             bars1 = ax1.bar(df_plot['Player'], df_plot['Total Distance (m)'], color='#e06666', width=0.5)
             ax1.axhline(y=NCAA_BASELINES['Average']['dist'], color='gold', linestyle='-', linewidth=2, label='NCAA Avg')
             
-            # 加上 pd.notna() 防護罩，避免全隊沒數據時當機
             team_avg_dist = df_plot['Total Distance (m)'].mean()
             if pd.notna(team_avg_dist):
                 ax1.axhline(y=team_avg_dist, color='blue', linestyle='--', label='Team Avg')
             
             for bar in bars1:
                 yval = bar.get_height()
-                # 🌟 加上防護罩：只有當 yval 存在且大於 0 時，才印出數字
                 if pd.notna(yval) and yval > 0:
                     ax1.text(bar.get_x() + bar.get_width()/2, yval/2 + 200, int(yval), ha='center', va='center', color='white', fontweight='bold', fontsize=12)
             ax1.legend()
@@ -268,6 +268,9 @@ else:
                 player_current_bar = df_total_only[(df_total_only['Player'] == selected_player) & (df_total_only['Date'] == player_selected_date)].iloc[0]
                 current_label = f"{player_selected_date} Total"
                 
+                # 🌟 修復關鍵：加上 can_plot 判斷，沒資料就不畫圖！
+                can_plot = False
+                
                 if selected_baseline == "NCAA Benchmark":
                     past_avg = {
                         'Total Distance (m)': ncaa_target['dist'],
@@ -276,41 +279,46 @@ else:
                         'HSD Ratio': ncaa_target['hsd_ratio'] / 100 
                     }
                     baseline_label = f"NCAA {selected_ncaa}"
+                    can_plot = True
                 else:
                     past_data = df_total_only[(df_total_only['Player'] == selected_player) & (df_total_only['Date'] == selected_baseline)]
                     if not past_data.empty:
                         past_avg = past_data[['Total Distance (m)', 'Avg Speed (m/min)', 'Top Speed (m/s)', 'HSD Ratio']].mean()
                         baseline_label = f"{selected_baseline} Total"
+                        can_plot = True
+                    else:
+                        st.info(f"💡 貼心提醒：{selected_player} 在 {selected_baseline} 剛好沒有紀錄，請選擇其他日期作為基準喔！")
+                        can_plot = False
 
-                fig_b, axes = plt.subplots(1, 4, figsize=(10, 4))
-                metrics = [
-                    ('Total Distance', 'Total Distance (m)', '#e06666', '#ea9999'),
-                    ('Average Speed', 'Avg Speed (m/min)', '#c27ba0', '#d5a6bd'),
-                    ('Max Speed', 'Top Speed (m/s)', '#f6b26b', '#fce5cd'),
-                    ('HSD Ratio (%)', 'HSD Ratio', '#93c47d', '#d9ead3')
-                ]
-                
-                labels = [baseline_label, current_label]
-                for i, (title, col_name, color_curr, color_past) in enumerate(metrics):
-                    # 抓取數值並處理潛在的 NaN
-                    val_past = past_avg[col_name] if pd.notna(past_avg[col_name]) else 0
-                    val_curr = player_current_bar[col_name] if pd.notna(player_current_bar[col_name]) else 0
+                # 只有確定有資料可以比對時，才開始畫長條圖
+                if can_plot:
+                    fig_b, axes = plt.subplots(1, 4, figsize=(10, 4))
+                    metrics = [
+                        ('Total Distance', 'Total Distance (m)', '#e06666', '#ea9999'),
+                        ('Average Speed', 'Avg Speed (m/min)', '#c27ba0', '#d5a6bd'),
+                        ('Max Speed', 'Top Speed (m/s)', '#f6b26b', '#fce5cd'),
+                        ('HSD Ratio (%)', 'HSD Ratio', '#93c47d', '#d9ead3')
+                    ]
                     
-                    if 'Ratio' in col_name:
-                        val_past *= 100
-                        val_curr *= 100
+                    labels = [baseline_label, current_label]
+                    for i, (title, col_name, color_curr, color_past) in enumerate(metrics):
+                        val_past = past_avg[col_name] if pd.notna(past_avg[col_name]) else 0
+                        val_curr = player_current_bar[col_name] if pd.notna(player_current_bar[col_name]) else 0
                         
-                    bars = axes[i].bar(labels, [val_past, val_curr], color=[color_past, color_curr], width=0.6)
-                    axes[i].set_title(title, fontweight='bold', fontsize=11)
-                    axes[i].spines['top'].set_visible(False)
-                    axes[i].spines['right'].set_visible(False)
-                    
-                    for bar in bars:
-                        yval = bar.get_height()
-                        # 🌟 加上防護罩
-                        if pd.notna(yval) and yval > 0:
-                            format_str = f"{int(yval)}" if 'Distance' in title else f"{yval:.1f}"
-                            axes[i].text(bar.get_x() + bar.get_width()/2, yval + (yval*0.02), format_str, ha='center', va='bottom', fontweight='bold', fontsize=10)
+                        if 'Ratio' in col_name:
+                            val_past *= 100
+                            val_curr *= 100
+                            
+                        bars = axes[i].bar(labels, [val_past, val_curr], color=[color_past, color_curr], width=0.6)
+                        axes[i].set_title(title, fontweight='bold', fontsize=11)
+                        axes[i].spines['top'].set_visible(False)
+                        axes[i].spines['right'].set_visible(False)
+                        
+                        for bar in bars:
+                            yval = bar.get_height()
+                            if pd.notna(yval) and yval > 0:
+                                format_str = f"{int(yval)}" if 'Distance' in title else f"{yval:.1f}"
+                                axes[i].text(bar.get_x() + bar.get_width()/2, yval + (yval*0.02), format_str, ha='center', va='bottom', fontweight='bold', fontsize=10)
 
-                plt.tight_layout()
-                st.pyplot(fig_b)
+                    plt.tight_layout()
+                    st.pyplot(fig_b)
