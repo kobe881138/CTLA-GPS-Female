@@ -2,7 +2,26 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+import urllib.request
 import os
+
+# ==========================================
+# 🌟 核彈級防破圖：自動下載並載入 Google 官方中文字體
+# ==========================================
+@st.cache_resource
+def load_chinese_font():
+    font_url = "https://github.com/google/fonts/raw/main/ofl/notosanstc/NotoSansTC-Regular.ttf"
+    font_path = "NotoSansTC-Regular.ttf"
+    if not os.path.exists(font_path):
+        urllib.request.urlretrieve(font_url, font_path)
+    fm.fontManager.addfont(font_path)
+    prop = fm.FontProperties(fname=font_path)
+    return prop.get_name()
+
+font_name = load_chinese_font()
+plt.rcParams['font.sans-serif'] = [font_name, 'sans-serif']
+plt.rcParams['axes.unicode_minus'] = False
 
 # ==========================================
 # 🌟 NCAA 女子長曲棍球基準數據庫
@@ -15,8 +34,6 @@ NCAA_BASELINES = {
 }
 
 st.set_page_config(page_title="女網 GPS 數據儀表板", layout="wide")
-plt.rcParams['font.sans-serif'] = ['Arial', 'sans-serif'] 
-plt.rcParams['axes.unicode_minus'] = False
 
 @st.cache_data
 def load_data(file_path):
@@ -24,7 +41,6 @@ def load_data(file_path):
         return pd.read_csv(file_path)
     return None
 
-# 讀取女生專屬的 CSV
 df = load_data('Cleaned_GPS_Data_Women.csv')
 
 if df is None:
@@ -32,9 +48,6 @@ if df is None:
 else:
     df['Date'] = df['Session'].astype(str).apply(lambda x: x.split()[0])
     
-    # ==========================================
-    # 🌟 側邊欄主導航列
-    # ==========================================
     st.sidebar.title("🥍 女網戰情室導覽")
     page_mode = st.sidebar.radio(
         "📌 選擇分析模式：", 
@@ -66,17 +79,12 @@ else:
             st.subheader(f"1️⃣ {selected_session} 外部與內部負荷")
             fig1, ax1 = plt.subplots(figsize=(12, 3.5))
             bars1 = ax1.bar(df_plot['Player'], df_plot['Total Distance (m)'], color='#e06666', width=0.5)
-            # 團隊總覽預設畫出 NCAA Average 線
             ax1.axhline(y=NCAA_BASELINES['Average']['dist'], color='gold', linestyle='-', linewidth=2, label='NCAA Avg')
             ax1.axhline(y=df_plot['Total Distance (m)'].mean(), color='blue', linestyle='--', label='Team Avg')
             
             for bar in bars1:
                 yval = bar.get_height()
                 ax1.text(bar.get_x() + bar.get_width()/2, yval/2 + 200, int(yval), ha='center', va='center', color='white', fontweight='bold', fontsize=12)
-                if 'RPE' in df_plot.columns:
-                    rpe_val = df_plot.loc[df_plot['Total Distance (m)'] == yval, 'RPE'].values[0]
-                    if rpe_val > 0:
-                        ax1.text(bar.get_x() + bar.get_width()/2, yval/2 - 200, f"RPE: {rpe_val}", ha='center', va='center', color='#ffd966', fontweight='bold', fontsize=11)
             ax1.legend()
             st.pyplot(fig1)
 
@@ -138,7 +146,6 @@ else:
                 session_avg_hsd = x_data.mean()
                 session_avg_top = y_data.mean()
                 
-                # 畫出球員，並標註位置 (例如 Alice(M/D))
                 ax4.scatter(x_data, y_data, color='#e06666', s=150, zorder=5, label='Players')
                 for i, player in enumerate(df_plot['Player']):
                     pos = df_plot['Position'].iloc[i]
@@ -148,7 +155,6 @@ else:
                 ax4.axvline(x=session_avg_hsd, color='blue', linestyle='--', alpha=0.3)
                 ax4.axhline(y=session_avg_top, color='blue', linestyle='--', alpha=0.3)
 
-                # 畫出 NCAA 三個位置的星星
                 pos_colors = {'A': '#e69138', 'M': '#38761d', 'D': '#1155cc'}
                 for p in ['A', 'M', 'D']:
                     ncaa_hsd = NCAA_BASELINES[p]['hsd_ratio']
@@ -159,7 +165,6 @@ else:
                 ax4.set_ylabel('Top Speed (m/s)', fontweight='bold')
                 ax4.legend(loc='upper left', bbox_to_anchor=(1, 1))
                 st.pyplot(fig4)
-
         else:
             st.warning("此時段沒有數據喔！")
 
@@ -176,32 +181,28 @@ else:
         df_total_only = df[df['Session'].str.lower().str.contains('total')]
         player_dates_with_total = df_total_only[df_total_only['Player'] == selected_player]['Date'].dropna().unique().tolist()
         
+        # 🌟 修復關鍵：把這行從長條圖區塊移出來，確保所有歷史日期都被定義
+        all_total_dates = df_total_only['Date'].dropna().unique().tolist()
+        
         if not player_dates_with_total:
             st.warning(f"💡 找不到 {selected_player} 的 Total 加總數據。")
         else:
-            # 🌟 1. 抓取該選手在點名簿上的原始位置
             raw_pos = str(df_total_only[df_total_only['Player'] == selected_player]['Position'].iloc[0])
-            # 雙位置處理：切開拿第一個字
             primary_pos = raw_pos.split('/')[0].strip().upper() if '/' in raw_pos else raw_pos.strip().upper()
             if primary_pos not in ['A', 'M', 'D']: primary_pos = 'Average'
 
-            # 🌟 2. 側邊欄手動選擇器 (預設為她的主打位置)
             st.sidebar.markdown("### 🎯 NCAA 對標設定")
             ncaa_options = ['Average', 'A', 'M', 'D']
             default_index = ncaa_options.index(primary_pos) if primary_pos in ncaa_options else 0
             
-            selected_ncaa = st.sidebar.selectbox(
-                "選擇 NCAA 比較對象：",
-                ncaa_options,
-                index=default_index
-            )
+            selected_ncaa = st.sidebar.selectbox("選擇 NCAA 比較對象：", ncaa_options, index=default_index)
             
             st.write("---")
             st.subheader(f"🛡️ {selected_player} (註冊位置: {raw_pos} | 當前對標: NCAA {selected_ncaa}) - 個人表現分析")
 
             col_radar, col_bar = st.columns([1, 1.5])
 
-            # 🎯 雷達圖：固定比例版 (0% ~ 150%)
+            # 🎯 雷達圖：對標 NCAA
             with col_radar:
                 st.markdown(f"##### 📍 六角雷達圖")
                 radar_date = st.selectbox("📅 選擇雷達圖日期：", player_dates_with_total, index=0)
@@ -212,7 +213,6 @@ else:
                 categories = ['Total Distance', 'Average Speed', 'Max Speed', 'HSD Ratio']
                 N = len(categories)
                 
-                # 計算選手達成 NCAA 標準的百分比 (1.0 = 100%)
                 p_dist = player_radar['Total Distance (m)'] / ncaa_target['dist']
                 p_avg_spd = player_radar['Avg Speed (m/min)'] / ncaa_target['avg_spd']
                 p_top_spd = player_radar['Top Speed (m/s)'] / ncaa_target['top_spd']
@@ -220,7 +220,7 @@ else:
                 
                 player_ratios = [p_dist, p_avg_spd, p_top_spd, p_hsd]
                 player_ratios += player_ratios[:1] 
-                ncaa_ratios = [1, 1, 1, 1, 1] # NCAA 基準線永遠在 100% (1.0)
+                ncaa_ratios = [1, 1, 1, 1, 1] 
                 
                 angles = [n / float(N) * 2 * np.pi for n in range(N)]
                 angles += angles[:1]
@@ -231,7 +231,6 @@ else:
                 ax_r.set_xticks(angles[:-1])
                 ax_r.set_xticklabels(categories, fontsize=12, fontweight='bold')
                 
-                # 🌟 固定雷達圖顯示範圍 (0 到 1.5，代表最高畫到 150%)
                 ax_r.set_ylim(0, 1.5)
                 ax_r.set_yticks([0.5, 1.0, 1.5])
                 ax_r.set_yticklabels(['50%', '100%', '150%'], color="grey", size=9, alpha=0.7)
@@ -245,7 +244,7 @@ else:
                 ax_r.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
                 st.pyplot(fig_r)
 
-            # 📊 長條圖：連動「手動選擇」的 NCAA 基準
+            # 📊 長條圖：連動選擇
             with col_bar:
                 st.markdown("##### 📈 歷史進步軌跡")
                 
