@@ -253,7 +253,7 @@ else:
                 ax_r.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
                 st.pyplot(fig_r)
 
-            # 📊 長條圖：連動選擇
+           # 📊 長條圖：連動選擇
             with col_bar:
                 st.markdown("##### 📈 歷史進步軌跡")
                 
@@ -261,8 +261,8 @@ else:
                 with col_b1: 
                     player_selected_date = st.selectbox("📅 當前表現 (Current)：", player_dates_with_total)
                 with col_b2:
-                    baseline_options = [d for d in all_total_dates if d != player_selected_date]
-                    selected_baseline = st.selectbox("📉 比較基準 (Baseline)：", ["NCAA Benchmark"] + baseline_options)
+                    # 🌟 修復：拿掉原本自作聰明的過濾條件，讓所有日期都能自由選擇！
+                    selected_baseline = st.selectbox("📉 比較基準 (Baseline)：", ["NCAA Benchmark"] + all_total_dates)
                 
                 player_current_bar = df_total_only[(df_total_only['Player'] == selected_player) & (df_total_only['Date'] == player_selected_date)].iloc[0]
                 current_label = f"{player_selected_date} Total"
