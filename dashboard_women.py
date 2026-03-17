@@ -16,7 +16,6 @@ if os.path.exists(font_path):
     prop = fm.FontProperties(fname=font_path)
     plt.rcParams['font.sans-serif'] = [prop.get_name(), 'sans-serif']
 else:
-    # 如果找不到 ttf，就去抓 packages.txt 安裝的 Linux 系統字體
     plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'Arial Unicode MS', 'sans-serif']
 
 plt.rcParams['axes.unicode_minus'] = False
@@ -44,6 +43,9 @@ df = load_data('Cleaned_GPS_Data_Women.csv')
 if df is None:
     st.error("❌ 找不到資料！請確認 Cleaned_GPS_Data_Women.csv 是否存在。")
 else:
+    # 🌟 終極殺蟲劑：強制過濾掉任何含有 '#' 號的幽靈球員，解決快取死當問題
+    df = df[~df['Player'].astype(str).str.contains('#')]
+    
     df['Date'] = df['Session'].astype(str).apply(lambda x: x.split()[0])
     
     st.sidebar.title("🥍 女網戰情室導覽")
@@ -206,32 +208,44 @@ else:
             ncaa_options = ['Average', 'A', 'M', 'D']
             default_index = ncaa_options.index(primary_pos) if primary_pos in ncaa_options else 0
             
-            selected_ncaa = st.sidebar.selectbox("選擇 NCAA 比較對象：", ncaa_options, index=default_index)
+            selected_ncaa = st.sidebar.selectbox("長條圖比較 NCAA 對象：", ncaa_options, index=default_index)
             
             st.write("---")
-            st.subheader(f"🛡️ {selected_player} (註冊位置: {raw_pos} | 當前對標: NCAA {selected_ncaa}) - 個人表現分析")
+            st.subheader(f"🛡️ {selected_player} (註冊位置: {raw_pos}) - 個人表現分析")
 
             col_radar, col_bar = st.columns([1, 1.5])
 
-            # 🎯 雷達圖
+            # ==========================================
+            # 🎯 雷達圖：對標當日團隊平均 (Z-Score 標準化)
+            # ==========================================
             with col_radar:
-                st.markdown(f"##### 📍 六角雷達圖")
+                st.markdown(f"##### 📍 六角雷達圖：對標當日團隊平均")
                 radar_date = st.selectbox("📅 選擇雷達圖日期：", player_dates_with_total, index=0)
                 
+                # 抓取該日的團隊平均值與標準差
+                team_radar_df = df_total_only[df_total_only['Date'] == radar_date]
+                team_mean = team_radar_df[['Total Distance (m)', 'Avg Speed (m/min)', 'Top Speed (m/s)', 'HSD Ratio']].mean()
+                team_std = team_radar_df[['Total Distance (m)', 'Avg Speed (m/min)', 'Top Speed (m/s)', 'HSD Ratio']].std().replace(0, 1).fillna(1)
+                
                 player_radar = df_total_only[(df_total_only['Player'] == selected_player) & (df_total_only['Date'] == radar_date)].iloc[0]
-                ncaa_target = NCAA_BASELINES[selected_ncaa]
 
                 categories = ['Total Distance', 'Average Speed', 'Max Speed', 'HSD Ratio']
                 N = len(categories)
                 
-                p_dist = player_radar['Total Distance (m)'] / ncaa_target['dist'] if pd.notna(player_radar['Total Distance (m)']) else 0
-                p_avg_spd = player_radar['Avg Speed (m/min)'] / ncaa_target['avg_spd'] if pd.notna(player_radar['Avg Speed (m/min)']) else 0
-                p_top_spd = player_radar['Top Speed (m/s)'] / ncaa_target['top_spd'] if pd.notna(player_radar['Top Speed (m/s)']) else 0
-                p_hsd = (player_radar['HSD Ratio']*100) / ncaa_target['hsd_ratio'] if pd.notna(player_radar['HSD Ratio']) else 0
+                # 計算 Z-Score
+                def calc_z(col):
+                    if pd.isna(player_radar[col]) or pd.isna(team_mean[col]): return 0
+                    z = (player_radar[col] - team_mean[col]) / team_std[col]
+                    return np.clip(z, -2, 2)
+                    
+                p_dist = calc_z('Total Distance (m)')
+                p_avg_spd = calc_z('Avg Speed (m/min)')
+                p_top_spd = calc_z('Top Speed (m/s)')
+                p_hsd = calc_z('HSD Ratio')
                 
                 player_ratios = [p_dist, p_avg_spd, p_top_spd, p_hsd]
                 player_ratios += player_ratios[:1] 
-                ncaa_ratios = [1, 1, 1, 1, 1] 
+                team_ratios = [0, 0, 0, 0, 0] # 團隊平均線在正中間 0 的位置
                 
                 angles = [n / float(N) * 2 * np.pi for n in range(N)]
                 angles += angles[:1]
@@ -242,20 +256,22 @@ else:
                 ax_r.set_xticks(angles[:-1])
                 ax_r.set_xticklabels(categories, fontsize=12, fontweight='bold')
                 
-                ax_r.set_ylim(0, 1.5)
-                ax_r.set_yticks([0.5, 1.0, 1.5])
-                ax_r.set_yticklabels(['50%', '100%', '150%'], color="grey", size=9, alpha=0.7)
+                ax_r.set_ylim(-2, 2)
+                ax_r.set_yticks([-2, -1, 0, 1, 2])
+                ax_r.set_yticklabels(['-2', '-1', '0', '1', '2'], color="grey", size=9, alpha=0.7)
                 
-                ax_r.plot(angles, ncaa_ratios, linewidth=2, linestyle='dashed', color='gold', label=f'NCAA {selected_ncaa} (100%)')
-                ax_r.fill(angles, ncaa_ratios, color='gold', alpha=0.1)
+                ax_r.plot(angles, team_ratios, linewidth=2, linestyle='dashed', color='#e06666', label=f'{radar_date} Team Avg (0)')
+                ax_r.fill(angles, team_ratios, color='#e06666', alpha=0.1)
                 
-                ax_r.plot(angles, player_ratios, linewidth=2.5, color='#e06666', label=f'{selected_player}')
-                ax_r.fill(angles, player_ratios, color='#e06666', alpha=0.3)
+                ax_r.plot(angles, player_ratios, linewidth=2.5, color='#4a86e8', label=f'{selected_player}')
+                ax_r.fill(angles, player_ratios, color='#4a86e8', alpha=0.3)
 
                 ax_r.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
                 st.pyplot(fig_r)
 
-            # 📊 長條圖
+            # ==========================================
+            # 📊 長條圖：連動選擇 (解決同日疊加 Bug)
+            # ==========================================
             with col_bar:
                 st.markdown("##### 📈 歷史進步軌跡")
                 
@@ -266,31 +282,31 @@ else:
                     selected_baseline = st.selectbox("📉 比較基準 (Baseline)：", ["NCAA Benchmark"] + all_total_dates)
                 
                 player_current_bar = df_total_only[(df_total_only['Player'] == selected_player) & (df_total_only['Date'] == player_selected_date)].iloc[0]
-                current_label = f"{player_selected_date} Total"
                 
-                # 🌟 修復關鍵：加上 can_plot 判斷，沒資料就不畫圖！
+                # 🌟 解決疊加 Bug：在標籤後面加上字樣，強迫 Python 認定這是兩根不同的柱子！
+                current_label = f"{player_selected_date} (當前)"
                 can_plot = False
                 
                 if selected_baseline == "NCAA Benchmark":
+                    ncaa_target = NCAA_BASELINES[selected_ncaa]
                     past_avg = {
                         'Total Distance (m)': ncaa_target['dist'],
                         'Avg Speed (m/min)': ncaa_target['avg_spd'],
                         'Top Speed (m/s)': ncaa_target['top_spd'],
                         'HSD Ratio': ncaa_target['hsd_ratio'] / 100 
                     }
-                    baseline_label = f"NCAA {selected_ncaa}"
+                    baseline_label = f"NCAA {selected_ncaa} (基準)"
                     can_plot = True
                 else:
                     past_data = df_total_only[(df_total_only['Player'] == selected_player) & (df_total_only['Date'] == selected_baseline)]
                     if not past_data.empty:
                         past_avg = past_data[['Total Distance (m)', 'Avg Speed (m/min)', 'Top Speed (m/s)', 'HSD Ratio']].mean()
-                        baseline_label = f"{selected_baseline} Total"
+                        baseline_label = f"{selected_baseline} (基準)"
                         can_plot = True
                     else:
                         st.info(f"💡 貼心提醒：{selected_player} 在 {selected_baseline} 剛好沒有紀錄，請選擇其他日期作為基準喔！")
                         can_plot = False
 
-                # 只有確定有資料可以比對時，才開始畫長條圖
                 if can_plot:
                     fig_b, axes = plt.subplots(1, 4, figsize=(10, 4))
                     metrics = [
