@@ -1,44 +1,41 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 import os
 import shutil
-import matplotlib as mpl
 
 # ==========================================
-# 🌟 終極防破圖系統第一步：在警衛上班前，先撕掉舊名單 (清除快取)
-# 注意：這段必須寫在 import pyplot 之前！
+# 🌟 終極防破圖系統：解決 Noto Sans 命名衝突 Bug
 # ==========================================
 cache_dir = mpl.get_cachedir()
 if os.path.exists(cache_dir):
     shutil.rmtree(cache_dir, ignore_errors=True)
 
-# 舊記憶清除後，現在才讓 pyplot 上班，強迫它重新掃描環境
-import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
-
-# ==========================================
-# 🌟 終極防破圖系統第二步：強制註冊本機字體
-# ==========================================
 current_dir = os.path.dirname(os.path.abspath(__file__))
 font_path = os.path.join(current_dir, "NotoSansTC-Regular.ttf")
 
-font_status_msg = ""
+# 🚨 終極解法：把我們在 packages.txt 安裝的 'WenQuanYi Zen Hei' 排在第一順位！
+# 這樣就能完美避開 'Noto Sans' 的英文撞名問題
+font_list = ['WenQuanYi Zen Hei', 'Microsoft JhengHei', 'PingFang HK', 'Noto Sans CJK TC']
+
 if os.path.exists(font_path):
     fm.fontManager.addfont(font_path)
     prop = fm.FontProperties(fname=font_path)
     font_name = prop.get_name()
     
-    # 絕對強制覆蓋字體設定
-    plt.rcParams['font.family'] = font_name
-    plt.rcParams['axes.unicode_minus'] = False
-    font_status_msg = f"✅ 成功載入字體：{font_name}"
+    # 避免撞名，我們把 Noto Sans 塞到清單後面，讓文泉驛正黑體優先發揮作用
+    if font_name not in font_list:
+        font_list.append(font_name)
+    font_status_msg = f"✅ 字體已載入 (防衝突模式啟動)"
 else:
-    # 備用方案
-    plt.rcParams['font.family'] = 'sans-serif'
-    plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'Arial Unicode MS', 'sans-serif']
-    plt.rcParams['axes.unicode_minus'] = False
-    font_status_msg = "⚠️ 找不到 ttf 檔案，使用系統備用字體"
+    font_status_msg = "⚠️ 找不到本機字體檔，使用雲端備用字體"
+
+font_list.append('sans-serif')
+plt.rcParams['font.sans-serif'] = font_list
+plt.rcParams['axes.unicode_minus'] = False
 
 # ==========================================
 # 🌟 NCAA 女子長曲棍球基準數據庫
