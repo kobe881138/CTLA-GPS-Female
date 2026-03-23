@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
+import plotly.graph_objects as go
 import os
 import shutil
 
@@ -51,12 +52,75 @@ df = load_data('Cleaned_GPS_Data_Women.csv')
 if df is None:
     st.error("❌ 找不到資料！請確認 Cleaned_GPS_Data_Women.csv 是否存在。")
 else:
-    # 🌟 終極殺蟲劑：強制過濾掉任何含有 '#' 號的幽靈球員
+    # 🌟 強制過濾掉任何含有 '#' 號的幽靈球員
     df = df[~df['Player'].astype(str).str.contains('#')]
-    
     df['Date'] = df['Session'].astype(str).apply(lambda x: x.split()[0])
     
+    # 解析月份
+    def get_month(date_str):
+        try:
+            return int(str(date_str).split('/')[0])
+        except:
+            return 0
+    df['Month'] = df['Date'].apply(get_month)
+
+    # 聚合引擎函數
+    def generate_agg_df(subset_df, period_name):
+        agg_funcs = {
+            'Total Distance (m)': 'sum',
+            'Avg Speed (m/min)': 'mean',
+            'Top Speed (m/s)': 'max',
+            'HSD Ratio': 'mean',
+            'Position': 'first'
+        }
+        if 'RPE' in subset_df.columns: agg_funcs['RPE'] = 'mean'
+        agg = subset_df.groupby('Player').agg(agg_funcs).reset_index()
+        agg['Date'] = period_name
+        agg['Session'] = period_name + ' Total'
+        return agg
+
+    # ==========================================
+    # 🌟 系統自動化：產生月份與季度的自動平均資料
+    # ==========================================
+    agg_dfs = []
+    for m in df['Month'].unique():
+        if m > 0:
+            m_df = df[df['Month'] == m]
+            if not m_df.empty:
+                agg_dfs.append(generate_agg_df(m_df, f'{m}月份'))
+                
+    q1_df = df[df['Month'].isin([1, 2, 3])]
+    if not q1_df.empty:
+        agg_dfs.append(generate_agg_df(q1_df, 'Q1 (1-3月)'))
+
+    # ==========================================
+    # 🌟 UI 自訂化：使用者專屬盃賽融合器
+    # ==========================================
+    if 'custom_periods' not in st.session_state:
+        st.session_state['custom_periods'] = {}
+
     st.sidebar.title("🥍 女網戰情室導覽")
+    
+    st.sidebar.markdown("### 🔄 建立專屬盃賽/週期")
+    raw_dates = [d for d in df['Date'].unique() if '/' in str(d)]
+    
+    with st.sidebar.expander("🛠️ 點此展開盃賽融合器"):
+        new_cycle_name = st.text_input("週期名稱 (例: Sekai Cross):")
+        selected_cycle_dates = st.multiselect("選擇要融合的日期:", raw_dates)
+        if st.button("➕ 建立專屬週期資料"):
+            if new_cycle_name and selected_cycle_dates:
+                st.session_state['custom_periods'][new_cycle_name] = selected_cycle_dates
+                st.rerun()
+
+    for c_name, c_dates in st.session_state['custom_periods'].items():
+        c_df = df[df['Date'].isin(c_dates)]
+        if not c_df.empty:
+            agg_dfs.append(generate_agg_df(c_df, c_name))
+
+    if agg_dfs:
+        df = pd.concat([df] + agg_dfs, ignore_index=True)
+
+    st.sidebar.markdown("---") 
     page_mode = st.sidebar.radio(
         "📌 選擇分析模式：", 
         ["📊 團隊總覽 (Team Dashboard)", "👤 個人報告 (Player Profile)"]
@@ -70,8 +134,16 @@ else:
         st.title("🥍 女網 GPS 戰情室 - 團隊總覽")
         
         st.sidebar.header("⚙️ 團隊設定面板")
+        
         available_dates = df['Date'].dropna().unique().tolist()
-        selected_date = st.sidebar.selectbox("📅 第一步：選擇日期", available_dates, key='team_date')
+        custom_and_auto_names = list(st.session_state['custom_periods'].keys()) + ['Q1 (1-3月)'] + [f'{m}月份' for m in df['Month'].unique() if m > 0]
+        
+        for name in reversed(custom_and_auto_names):
+            if name in available_dates:
+                available_dates.remove(name)
+                available_dates.insert(0, name)
+                
+        selected_date = st.sidebar.selectbox("📅 第一步：選擇日期或週期", available_dates, key='team_date')
         
         sessions_for_date = df[df['Date'] == selected_date]['Session'].unique().tolist()
         selected_session = st.sidebar.selectbox("⏱️ 第二步：選擇時段", sessions_for_date, key='team_session')
@@ -93,13 +165,14 @@ else:
             if pd.notna(team_avg_dist):
                 ax1.axhline(y=team_avg_dist, color='blue', linestyle='--', label='Team Avg')
             
-            for bar in bars1:
-                yval = bar.get_height()
-                if pd.notna(yval) and yval > 0:
-                    ax1.text(bar.get_x() + bar.get_width()/2, yval/2 + 200, int(yval), ha='center', va='center', color='white', fontweight='bold', fontsize=12)
+            # 🌟 升級：移除數字顯示，並加上 margins(x=0.05) 增加左右呼吸空間防裁切
+            ax1.margins(x=0.05)
             
-            # 🎯 調整 Y 軸：0 到 10000
-            ax1.set_ylim(0, 10000)
+            if 'Total' in selected_session:
+                ax1.set_ylim(0, 25000) 
+            else:
+                ax1.set_ylim(0, 10000)
+                
             ax1.legend()
             st.pyplot(fig1)
 
@@ -113,13 +186,9 @@ else:
                 team_avg_spd = df_plot['Avg Speed (m/min)'].mean()
                 if pd.notna(team_avg_spd):
                     ax2.axhline(y=team_avg_spd, color='blue', linestyle='--', alpha=0.5, label='Team Avg')
-                    
-                for bar in bars2:
-                    yval = bar.get_height()
-                    if pd.notna(yval) and yval > 0:
-                        ax2.text(bar.get_x() + bar.get_width()/2, yval + 1, f"{yval:.1f}", ha='center', va='bottom', fontweight='bold')
                 
-                # 🎯 調整 Y 軸：0 到 100
+                # 🌟 升級：移除數字顯示，並加上 margins 防裁切
+                ax2.margins(x=0.1)
                 ax2.set_ylim(0, 100)
                 ax2.legend(loc='lower right')
                 st.pyplot(fig2)
@@ -147,11 +216,7 @@ else:
                         y_vals = [q_data[q_data['Player'] == p]['Total Distance (m)'].max() if not q_data[q_data['Player'] == p].empty else 0 for p in players]
                         offset = i * width - (0.8/2) + (width/2)
                         bars_q = ax3_q.bar(x + offset, y_vals, width, label=f"{q_sess}", color=colors[i%len(colors)])
-                        for bar in bars_q:
-                            h = bar.get_height()
-                            if pd.notna(h) and h > 0:
-                                ax3_q.text(bar.get_x() + bar.get_width()/2, h/2, int(h), ha='center', va='center', color='white', fontsize=10, fontweight='bold', rotation=90)
-                    
+                        
                     team_avg_q_dist = df_q['Total Distance (m)'].mean()
                     if pd.notna(team_avg_q_dist):
                         ax3_q.axhline(team_avg_q_dist, color='blue', linestyle='--', label='Session Avg')
@@ -159,49 +224,69 @@ else:
                     ax3_q.set_xticks(x)
                     ax3_q.set_xticklabels(players)
                     
-                    # 🎯 調整 Y 軸：0 到 1500
+                    # 🌟 升級：移除數字顯示，加上 margins
+                    ax3_q.margins(x=0.05)
                     ax3_q.set_ylim(0, 1500)
                     ax3_q.legend(loc='upper right', fontsize='small')
                     st.pyplot(fig3_q)
                 else:
-                    st.info("💡 此時段無單節資料。")
+                    st.info("💡 此時段無單節資料或為週期加總資料。")
 
             st.write("<br>", unsafe_allow_html=True)
-            st.subheader("4️⃣ 爆發力象限圖 (含 NCAA 各位置基準)")
-            spacer1, col_center, spacer2 = st.columns([1, 2, 1])
+            st.subheader("4️⃣ 爆發力象限圖 (Plotly 互動版)")
+            
+            spacer1, col_center, spacer2 = st.columns([1, 4, 1])
             with col_center:
-                fig4, ax4 = plt.subplots(figsize=(8, 5))
                 x_data = df_plot['HSD Ratio'] * 100
                 y_data = df_plot['Top Speed (m/s)']
                 session_avg_hsd = x_data.mean()
                 session_avg_top = y_data.mean()
                 
-                ax4.scatter(x_data, y_data, color='#e06666', s=150, zorder=5, label='Players')
-                for i, player in enumerate(df_plot['Player']):
-                    pos = df_plot['Position'].iloc[i]
-                    if pd.notna(x_data[i]) and pd.notna(y_data[i]):
-                        ax4.text(x_data[i] + 0.2, y_data[i], f"{player}({pos})", fontsize=9, fontweight='bold', va='center')
+                fig4 = go.Figure()
+
+                fig4.add_trace(go.Scatter(
+                    x=x_data, y=y_data,
+                    mode='markers+text',
+                    text=df_plot['Player'] + " (" + df_plot['Position'] + ")",
+                    textposition="top center",
+                    marker=dict(color='#e06666', size=12, line=dict(width=1, color='white')),
+                    name='Players',
+                    hovertemplate='<b>%{text}</b><br>HSD Ratio: %{x:.1f}%<br>Top Speed: %{y:.1f} m/s<extra></extra>'
+                ))
 
                 if pd.notna(session_avg_hsd) and pd.notna(session_avg_top):
-                    ax4.scatter(session_avg_hsd, session_avg_top, color='blue', marker='P', s=200, zorder=6, label='Session Avg')
-                    ax4.axvline(x=session_avg_hsd, color='blue', linestyle='--', alpha=0.3)
-                    ax4.axhline(y=session_avg_top, color='blue', linestyle='--', alpha=0.3)
+                    fig4.add_trace(go.Scatter(
+                        x=[session_avg_hsd], y=[session_avg_top],
+                        mode='markers',
+                        marker=dict(color='blue', symbol='cross', size=14),
+                        name='Session Avg',
+                        hovertemplate='<b>團隊平均</b><br>HSD Ratio: %{x:.1f}%<br>Top Speed: %{y:.1f} m/s<extra></extra>'
+                    ))
+                    fig4.add_vline(x=session_avg_hsd, line_dash="dash", line_color="blue", opacity=0.3)
+                    fig4.add_hline(y=session_avg_top, line_dash="dash", line_color="blue", opacity=0.3)
 
                 pos_colors = {'A': '#e69138', 'M': '#38761d', 'D': '#1155cc'}
                 for p in ['A', 'M', 'D']:
-                    ncaa_hsd = NCAA_BASELINES[p]['hsd_ratio']
-                    ncaa_top = NCAA_BASELINES[p]['top_spd']
-                    ax4.scatter(ncaa_hsd, ncaa_top, color=pos_colors[p], marker='*', s=250, zorder=10, label=f'NCAA {p}')
+                    fig4.add_trace(go.Scatter(
+                        x=[NCAA_BASELINES[p]['hsd_ratio']],
+                        y=[NCAA_BASELINES[p]['top_spd']],
+                        mode='markers',
+                        marker=dict(color=pos_colors[p], symbol='star', size=18, line=dict(width=1, color='darkgray')),
+                        name=f'NCAA {p}',
+                        hovertemplate=f'<b>NCAA {p}</b><br>HSD Ratio: %{{x:.1f}}%<br>Top Speed: %{{y:.1f}} m/s<extra></extra>'
+                    ))
 
-                ax4.set_xlabel('HSD (>4m/s) Ratio (%)', fontweight='bold')
-                ax4.set_ylabel('Top Speed (m/s)', fontweight='bold')
+                fig4.update_layout(
+                    xaxis_title='<b>HSD (>4m/s) Ratio (%)</b>',
+                    yaxis_title='<b>Top Speed (m/s)</b>',
+                    xaxis=dict(range=[0, 25]),
+                    yaxis=dict(range=[0, 10]),
+                    margin=dict(l=20, r=20, t=30, b=20),
+                    hovermode='closest',
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
                 
-                # 🎯 調整 X 軸：0 到 25，Y 軸：0 到 10
-                ax4.set_xlim(0, 25)
-                ax4.set_ylim(0, 10)
-                
-                ax4.legend(loc='upper left', bbox_to_anchor=(1, 1))
-                st.pyplot(fig4)
+                st.plotly_chart(fig4, use_container_width=True)
         else:
             st.warning("此時段沒有數據喔！")
 
@@ -343,9 +428,9 @@ else:
                         axes[i].spines['top'].set_visible(False)
                         axes[i].spines['right'].set_visible(False)
                         
-                        # 🎯 針對四個圖表分別鎖定不同的 Y 軸範圍
                         if 'Total Distance' in title:
-                            axes[i].set_ylim(0, 10000)
+                            max_y = max(val_past, val_curr)
+                            axes[i].set_ylim(0, max_y * 1.15 if max_y > 8000 else 10000)
                         elif 'Average Speed' in title:
                             axes[i].set_ylim(0, 100)
                         elif 'Max Speed' in title:
@@ -353,6 +438,7 @@ else:
                         elif 'HSD Ratio' in title:
                             axes[i].set_ylim(0, 20)
                         
+                        # 💡 個人報告因為只有兩根柱子，保留數值顯示比較方便對比
                         for bar in bars:
                             yval = bar.get_height()
                             if pd.notna(yval) and yval > 0:
