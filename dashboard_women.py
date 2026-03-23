@@ -52,11 +52,9 @@ df = load_data('Cleaned_GPS_Data_Women.csv')
 if df is None:
     st.error("❌ 找不到資料！請確認 Cleaned_GPS_Data_Women.csv 是否存在。")
 else:
-    # 🌟 強制過濾掉任何含有 '#' 號的幽靈球員
     df = df[~df['Player'].astype(str).str.contains('#')]
     df['Date'] = df['Session'].astype(str).apply(lambda x: x.split()[0])
     
-    # 解析月份
     def get_month(date_str):
         try:
             return int(str(date_str).split('/')[0])
@@ -64,8 +62,17 @@ else:
             return 0
     df['Month'] = df['Date'].apply(get_month)
 
-    # 聚合引擎函數
+    # ==========================================
+    # 🌟 聚合引擎 (修復雙重計算距離 Bug)
+    # ==========================================
     def generate_agg_df(subset_df, period_name):
+        # 🚨 關鍵防呆：只抓取每天的 Total 數據來相加，避免把單節跟全天重複加總！
+        daily_totals = subset_df[subset_df['Session'].astype(str).str.contains('Total|total', case=False, na=False)]
+        
+        # 如果該區間沒有 Total 數據才退而求其次
+        if daily_totals.empty:
+            daily_totals = subset_df
+            
         agg_funcs = {
             'Total Distance (m)': 'sum',
             'Avg Speed (m/min)': 'mean',
@@ -73,15 +80,13 @@ else:
             'HSD Ratio': 'mean',
             'Position': 'first'
         }
-        if 'RPE' in subset_df.columns: agg_funcs['RPE'] = 'mean'
-        agg = subset_df.groupby('Player').agg(agg_funcs).reset_index()
+        if 'RPE' in daily_totals.columns: agg_funcs['RPE'] = 'mean'
+        
+        agg = daily_totals.groupby('Player').agg(agg_funcs).reset_index()
         agg['Date'] = period_name
         agg['Session'] = period_name + ' Total'
         return agg
 
-    # ==========================================
-    # 🌟 系統自動化：產生月份與季度的自動平均資料
-    # ==========================================
     agg_dfs = []
     for m in df['Month'].unique():
         if m > 0:
@@ -93,14 +98,10 @@ else:
     if not q1_df.empty:
         agg_dfs.append(generate_agg_df(q1_df, 'Q1 (1-3月)'))
 
-    # ==========================================
-    # 🌟 UI 自訂化：使用者專屬盃賽融合器
-    # ==========================================
     if 'custom_periods' not in st.session_state:
         st.session_state['custom_periods'] = {}
 
     st.sidebar.title("🥍 女網戰情室導覽")
-    
     st.sidebar.markdown("### 🔄 建立專屬盃賽/週期")
     raw_dates = [d for d in df['Date'].unique() if '/' in str(d)]
     
@@ -134,7 +135,6 @@ else:
     # ==========================================
     if page_mode == "📊 團隊總覽 (Team Dashboard)":
         st.title("🥍 女網 GPS 戰情室 - 團隊總覽")
-        
         st.sidebar.header("⚙️ 團隊設定面板")
         
         available_dates = df['Date'].dropna().unique().tolist()
@@ -144,7 +144,6 @@ else:
                 available_dates.insert(0, name)
                 
         selected_date = st.sidebar.selectbox("📅 第一步：選擇日期或週期", available_dates, key='team_date')
-        
         sessions_for_date = df[df['Date'] == selected_date]['Session'].unique().tolist()
         selected_session = st.sidebar.selectbox("⏱️ 第二步：選擇時段", sessions_for_date, key='team_session')
         
@@ -166,15 +165,12 @@ else:
                 ax1.axhline(y=team_avg_dist, color='blue', linestyle='--', label='Team Avg')
             
             ax1.margins(x=0.05)
-            
-            # 🌟 全新升級：階梯式動態 Y 軸 (以 10000 為級距)
             max_d = df_plot['Total Distance (m)'].max()
             if pd.notna(max_d) and max_d >= 0:
                 y_max = (int(max_d) // 10000 + 1) * 10000
             else:
                 y_max = 10000
             ax1.set_ylim(0, y_max)
-                
             ax1.legend()
             st.pyplot(fig1)
 
@@ -196,10 +192,8 @@ else:
 
             with col2:
                 is_custom_or_auto = selected_date in custom_and_auto_names
-                
                 if is_custom_or_auto:
                     st.subheader(f"3️⃣ {selected_date} 每日負荷消長")
-                    
                     if selected_date in st.session_state['custom_periods']:
                         target_dates = st.session_state['custom_periods'][selected_date]
                     elif selected_date == 'Q1 (1-3月)':
@@ -211,8 +205,8 @@ else:
                         target_dates = []
                         
                     target_dates = [d for d in target_dates if d not in custom_and_auto_names and '/' in str(d)]
-                    
-                    df_q = df[(df['Date'].isin(target_dates)) & (df['Session'].str.lower().str.contains('total'))]
+                    # 強制防呆搜尋，確保抓得到 Total
+                    df_q = df[(df['Date'].isin(target_dates)) & (df['Session'].astype(str).str.contains('Total|total', case=False, na=False))]
                     
                     if not df_q.empty:
                         daily_sessions = sorted(df_q['Date'].unique().tolist())
@@ -236,14 +230,12 @@ else:
                         ax3_q.set_xticklabels(players)
                         ax3_q.margins(x=0.05)
                         
-                        # 同步套用階梯式 Y 軸給每日負荷圖
                         max_y = df_q['Total Distance (m)'].max()
                         if pd.notna(max_y) and max_y >= 0:
                             y_max = (int(max_y) // 10000 + 1) * 10000
                         else:
                             y_max = 10000
                         ax3_q.set_ylim(0, y_max)
-                            
                         ax3_q.legend(loc='upper right', fontsize='small')
                         st.pyplot(fig3_q)
                     else:
@@ -288,7 +280,6 @@ else:
 
             st.write("<br>", unsafe_allow_html=True)
             st.subheader("4️⃣ 爆發力象限圖 (Plotly 互動版)")
-            
             spacer1, col_center, spacer2 = st.columns([1, 4, 1])
             with col_center:
                 x_data = df_plot['HSD Ratio'] * 100
@@ -297,23 +288,17 @@ else:
                 session_avg_top = y_data.mean()
                 
                 fig4 = go.Figure()
-
                 fig4.add_trace(go.Scatter(
-                    x=x_data, y=y_data,
-                    mode='markers+text',
-                    text=df_plot['Player'] + " (" + df_plot['Position'] + ")",
-                    textposition="top center",
-                    marker=dict(color='#e06666', size=12, line=dict(width=1, color='white')),
-                    name='Players',
+                    x=x_data, y=y_data, mode='markers+text',
+                    text=df_plot['Player'] + " (" + df_plot['Position'] + ")", textposition="top center",
+                    marker=dict(color='#e06666', size=12, line=dict(width=1, color='white')), name='Players',
                     hovertemplate='<b>%{text}</b><br>HSD Ratio: %{x:.1f}%<br>Top Speed: %{y:.1f} m/s<extra></extra>'
                 ))
 
                 if pd.notna(session_avg_hsd) and pd.notna(session_avg_top):
                     fig4.add_trace(go.Scatter(
-                        x=[session_avg_hsd], y=[session_avg_top],
-                        mode='markers',
-                        marker=dict(color='blue', symbol='cross', size=14),
-                        name='Session Avg',
+                        x=[session_avg_hsd], y=[session_avg_top], mode='markers',
+                        marker=dict(color='blue', symbol='cross', size=14), name='Session Avg',
                         hovertemplate='<b>團隊平均</b><br>HSD Ratio: %{x:.1f}%<br>Top Speed: %{y:.1f} m/s<extra></extra>'
                     ))
                     fig4.add_vline(x=session_avg_hsd, line_dash="dash", line_color="blue", opacity=0.3)
@@ -322,24 +307,17 @@ else:
                 pos_colors = {'A': '#e69138', 'M': '#38761d', 'D': '#1155cc'}
                 for p in ['A', 'M', 'D']:
                     fig4.add_trace(go.Scatter(
-                        x=[NCAA_BASELINES[p]['hsd_ratio']],
-                        y=[NCAA_BASELINES[p]['top_spd']],
-                        mode='markers',
-                        marker=dict(color=pos_colors[p], symbol='star', size=18, line=dict(width=1, color='darkgray')),
-                        name=f'NCAA {p}',
+                        x=[NCAA_BASELINES[p]['hsd_ratio']], y=[NCAA_BASELINES[p]['top_spd']], mode='markers',
+                        marker=dict(color=pos_colors[p], symbol='star', size=18, line=dict(width=1, color='darkgray')), name=f'NCAA {p}',
                         hovertemplate=f'<b>NCAA {p}</b><br>HSD Ratio: %{{x:.1f}}%<br>Top Speed: %{{y:.1f}} m/s<extra></extra>'
                     ))
 
                 fig4.update_layout(
-                    xaxis_title='<b>HSD (>4m/s) Ratio (%)</b>',
-                    yaxis_title='<b>Top Speed (m/s)</b>',
-                    xaxis=dict(range=[0, 25]),
-                    yaxis=dict(range=[0, 10]),
-                    margin=dict(l=20, r=20, t=30, b=20),
-                    hovermode='closest',
+                    xaxis_title='<b>HSD (>4m/s) Ratio (%)</b>', yaxis_title='<b>Top Speed (m/s)</b>',
+                    xaxis=dict(range=[0, 25]), yaxis=dict(range=[0, 10]),
+                    margin=dict(l=20, r=20, t=30, b=20), hovermode='closest',
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                 )
-                
                 st.plotly_chart(fig4, use_container_width=True)
         else:
             st.warning("此時段沒有數據喔！")
@@ -349,15 +327,18 @@ else:
     # ==========================================
     elif page_mode == "👤 個人報告 (Player Profile)":
         st.title("🥍 女網 GPS 戰情室 - 個人報告")
-        
         st.sidebar.header("👤 個人報告設定")
+        
         all_players = sorted(df['Player'].unique().tolist())
         selected_player = st.sidebar.selectbox("🏃 選擇選手：", all_players)
         
-        df_total_only = df[df['Session'].str.lower().str.contains('total')]
+        # 🚨 超強防呆過濾：保證大小寫通吃且避開空值
+        df_total_only = df[df['Session'].astype(str).str.contains('Total|total', case=False, na=False)]
+        
         player_dates_with_total = df_total_only[df_total_only['Player'] == selected_player]['Date'].dropna().unique().tolist()
         all_total_dates = df_total_only['Date'].dropna().unique().tolist()
         
+        # 🌟 強制將「週期加總」與自動化月份排在下拉選單最上方
         for name in reversed(custom_and_auto_names):
             if name in player_dates_with_total:
                 player_dates_with_total.remove(name)
@@ -376,7 +357,6 @@ else:
             st.sidebar.markdown("### 🎯 NCAA 對標設定")
             ncaa_options = ['Average', 'A', 'M', 'D']
             default_index = ncaa_options.index(primary_pos) if primary_pos in ncaa_options else 0
-            
             selected_ncaa = st.sidebar.selectbox("長條圖比較 NCAA 對象：", ncaa_options, index=default_index)
             
             st.write("---")
@@ -426,16 +406,13 @@ else:
                 
                 ax_r.plot(angles, team_ratios, linewidth=2, linestyle='dashed', color='#e06666', label=f'{radar_date} Team Avg (0)')
                 ax_r.fill(angles, team_ratios, color='#e06666', alpha=0.1)
-                
                 ax_r.plot(angles, player_ratios, linewidth=2.5, color='#4a86e8', label=f'{selected_player}')
                 ax_r.fill(angles, player_ratios, color='#4a86e8', alpha=0.3)
-
                 ax_r.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
                 st.pyplot(fig_r)
 
             with col_bar:
                 st.markdown("##### 📈 歷史進步軌跡")
-                
                 col_b1, col_b2 = st.columns(2)
                 with col_b1: 
                     player_selected_date = st.selectbox("📅 當前表現 (Current)：", player_dates_with_total)
@@ -443,17 +420,14 @@ else:
                     selected_baseline = st.selectbox("📉 比較基準 (Baseline)：", ["NCAA Benchmark"] + all_total_dates)
                 
                 player_current_bar = df_total_only[(df_total_only['Player'] == selected_player) & (df_total_only['Date'] == player_selected_date)].iloc[0]
-                
                 current_label = f"{player_selected_date} (當前)"
                 can_plot = False
                 
                 if selected_baseline == "NCAA Benchmark":
                     ncaa_target = NCAA_BASELINES[selected_ncaa]
                     past_avg = {
-                        'Total Distance (m)': ncaa_target['dist'],
-                        'Avg Speed (m/min)': ncaa_target['avg_spd'],
-                        'Top Speed (m/s)': ncaa_target['top_spd'],
-                        'HSD Ratio': ncaa_target['hsd_ratio'] / 100 
+                        'Total Distance (m)': ncaa_target['dist'], 'Avg Speed (m/min)': ncaa_target['avg_spd'],
+                        'Top Speed (m/s)': ncaa_target['top_spd'], 'HSD Ratio': ncaa_target['hsd_ratio'] / 100 
                     }
                     baseline_label = f"NCAA {selected_ncaa} (基準)"
                     can_plot = True
@@ -464,7 +438,7 @@ else:
                         baseline_label = f"{selected_baseline} (基準)"
                         can_plot = True
                     else:
-                        st.info(f"💡 貼心提醒：{selected_player} 在 {selected_baseline} 剛好沒有紀錄，請選擇其他日期作為基準喔！")
+                        st.info(f"💡 貼心提醒：{selected_player} 在 {selected_baseline} 剛好沒有紀錄喔！")
                         can_plot = False
 
                 if can_plot:
@@ -490,7 +464,6 @@ else:
                         axes[i].spines['top'].set_visible(False)
                         axes[i].spines['right'].set_visible(False)
                         
-                        # 🌟 個人報告也套用階梯式動態 Y 軸
                         if 'Total Distance' in title:
                             max_y = max(val_past, val_curr)
                             if pd.notna(max_y) and max_y >= 0:
