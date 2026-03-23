@@ -171,23 +171,65 @@ else:
 
             col1, col2 = st.columns(2)
             with col1:
+                # ==========================================
+                # 🌟 升級功能：平均速度多日比較選擇器
+                # ==========================================
                 st.subheader("2️⃣ 平均速度表現 (vs. NCAA Avg)")
-                fig2, ax2 = plt.subplots(figsize=(6, 4))
-                bars2 = ax2.bar(df_plot['Player'], df_plot['Avg Speed (m/min)'], color='#c27ba0', width=0.5)
-                ax2.axhline(y=NCAA_BASELINES['Average']['avg_spd'], color='gold', linestyle='-', linewidth=2, label='NCAA Avg')
+                spd_mode = st.radio("顯示模式：", ["📌 當前時段", "📅 多日比較 (最多5天)"], horizontal=True, key='spd_mode')
                 
-                team_avg_spd = df_plot['Avg Speed (m/min)'].mean()
-                if pd.notna(team_avg_spd):
-                    ax2.axhline(y=team_avg_spd, color='blue', linestyle='--', alpha=0.5, label='Team Avg')
-                
-                ax2.margins(x=0.1)
-                # 團隊總覽也套用 Avg Speed 階梯動態 (基礎100，級距20)
-                max_spd = df_plot['Avg Speed (m/min)'].max()
-                y_max_spd = max(100, (int(max_spd) // 20 + 1) * 20) if pd.notna(max_spd) and max_spd >= 0 else 100
-                ax2.set_ylim(0, y_max_spd)
-                
-                ax2.legend(loc='lower right')
-                st.pyplot(fig2)
+                if spd_mode == "📌 當前時段":
+                    fig2, ax2 = plt.subplots(figsize=(6, 4))
+                    bars2 = ax2.bar(df_plot['Player'], df_plot['Avg Speed (m/min)'], color='#c27ba0', width=0.5)
+                    ax2.axhline(y=NCAA_BASELINES['Average']['avg_spd'], color='gold', linestyle='-', linewidth=2, label='NCAA Avg')
+                    
+                    team_avg_spd = df_plot['Avg Speed (m/min)'].mean()
+                    if pd.notna(team_avg_spd):
+                        ax2.axhline(y=team_avg_spd, color='blue', linestyle='--', alpha=0.5, label='Team Avg')
+                    
+                    ax2.margins(x=0.1)
+                    max_spd = df_plot['Avg Speed (m/min)'].max()
+                    y_max_spd = max(100, (int(max_spd) // 20 + 1) * 20) if pd.notna(max_spd) and max_spd >= 0 else 100
+                    ax2.set_ylim(0, y_max_spd)
+                    ax2.legend(loc='lower right')
+                    st.pyplot(fig2)
+                else:
+                    # 多日比較模式
+                    valid_dates = [d for d in df['Date'].unique() if '/' in str(d) and d not in custom_and_auto_names]
+                    default_d = selected_date if selected_date in valid_dates else valid_dates[-1] if valid_dates else None
+                    
+                    selected_spd_dates = st.multiselect("選擇欲比較的日期 (最多5天)：", valid_dates, default=[default_d] if default_d else [], max_selections=5, key='spd_multi')
+                    
+                    if selected_spd_dates:
+                        df_spd = df[(df['Date'].isin(selected_spd_dates)) & (df['Session'].astype(str).str.contains('Total|total', case=False, na=False))]
+                        
+                        if not df_spd.empty:
+                            players_spd = sorted(df_spd['Player'].unique())
+                            fig2, ax2 = plt.subplots(figsize=(6, 4))
+                            x = np.arange(len(players_spd))
+                            width = 0.8 / len(selected_spd_dates)
+                            colors_spd = ['#c27ba0', '#8e7cc3', '#6fa8dc', '#f6b26b', '#93c47d']
+                            
+                            ax2.axhline(y=NCAA_BASELINES['Average']['avg_spd'], color='gold', linestyle='-', linewidth=2, label='NCAA Avg')
+                            
+                            for i, d_date in enumerate(selected_spd_dates):
+                                d_data = df_spd[df_spd['Date'] == d_date]
+                                y_vals = [d_data[d_data['Player'] == p]['Avg Speed (m/min)'].max() if not d_data[d_data['Player'] == p].empty else 0 for p in players_spd]
+                                offset = i * width - (0.8/2) + (width/2)
+                                ax2.bar(x + offset, y_vals, width, label=f"{d_date}", color=colors_spd[i%len(colors_spd)])
+                            
+                            ax2.set_xticks(x)
+                            ax2.set_xticklabels(players_spd)
+                            ax2.margins(x=0.05)
+                            
+                            max_spd = df_spd['Avg Speed (m/min)'].max()
+                            y_max_spd = max(100, (int(max_spd) // 20 + 1) * 20) if pd.notna(max_spd) and max_spd >= 0 else 100
+                            ax2.set_ylim(0, y_max_spd)
+                            ax2.legend(loc='lower right', fontsize='small')
+                            st.pyplot(fig2)
+                        else:
+                            st.info("💡 找不到所選日期的 Total 數據來進行比較。")
+                    else:
+                        st.info("💡 請至少選擇一個日期。")
 
             with col2:
                 is_custom_or_auto = selected_date in custom_and_auto_names
@@ -411,9 +453,6 @@ else:
                 ax_r.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
                 st.pyplot(fig_r)
 
-            # ==========================================
-            # 🌟 個人報告動態縮放：所有指標全面套用階梯邏輯
-            # ==========================================
             with col_bar:
                 st.markdown("##### 📈 歷史進步軌跡")
                 compare_mode = st.radio("📊 選擇比較模式：", ["雙期比較 (2個數據)", "三期比較 (3個數據)"], horizontal=True)
@@ -500,21 +539,16 @@ else:
                     axes[i].spines['top'].set_visible(False)
                     axes[i].spines['right'].set_visible(False)
                     
-                    # 🎯 個人報告：全指標套用階梯式動態天花板邏輯
                     if plot_vals:
                         max_y = max(plot_vals)
                         if pd.notna(max_y) and max_y >= 0:
                             if 'Total Distance' in title:
-                                # 基礎 10000，每萬一階
                                 y_max = max(10000, (int(max_y) // 10000 + 1) * 10000)
                             elif 'Average Speed' in title:
-                                # 基礎 100，每20一階
                                 y_max = max(100, (int(max_y) // 20 + 1) * 20)
                             elif 'Max Speed' in title:
-                                # 基礎 10，每2一階
                                 y_max = max(10, (int(max_y) // 2 + 1) * 2)
                             elif 'HSD Ratio' in title:
-                                # 基礎 20，每10一階
                                 y_max = max(20, (int(max_y) // 10 + 1) * 10)
                             axes[i].set_ylim(0, y_max)
                     
