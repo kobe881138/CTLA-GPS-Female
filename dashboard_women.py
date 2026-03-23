@@ -119,6 +119,8 @@ else:
 
     if agg_dfs:
         df = pd.concat([df] + agg_dfs, ignore_index=True)
+        
+    custom_and_auto_names = list(st.session_state['custom_periods'].keys()) + ['Q1 (1-3月)'] + [f'{m}月份' for m in df['Month'].unique() if m > 0]
 
     st.sidebar.markdown("---") 
     page_mode = st.sidebar.radio(
@@ -136,8 +138,6 @@ else:
         st.sidebar.header("⚙️ 團隊設定面板")
         
         available_dates = df['Date'].dropna().unique().tolist()
-        custom_and_auto_names = list(st.session_state['custom_periods'].keys()) + ['Q1 (1-3月)'] + [f'{m}月份' for m in df['Month'].unique() if m > 0]
-        
         for name in reversed(custom_and_auto_names):
             if name in available_dates:
                 available_dates.remove(name)
@@ -165,13 +165,15 @@ else:
             if pd.notna(team_avg_dist):
                 ax1.axhline(y=team_avg_dist, color='blue', linestyle='--', label='Team Avg')
             
-            # 🌟 升級：移除數字顯示，並加上 margins(x=0.05) 增加左右呼吸空間防裁切
             ax1.margins(x=0.05)
             
-            if 'Total' in selected_session:
-                ax1.set_ylim(0, 25000) 
+            # 🌟 全新升級：階梯式動態 Y 軸 (以 10000 為級距)
+            max_d = df_plot['Total Distance (m)'].max()
+            if pd.notna(max_d) and max_d >= 0:
+                y_max = (int(max_d) // 10000 + 1) * 10000
             else:
-                ax1.set_ylim(0, 10000)
+                y_max = 10000
+            ax1.set_ylim(0, y_max)
                 
             ax1.legend()
             st.pyplot(fig1)
@@ -187,50 +189,102 @@ else:
                 if pd.notna(team_avg_spd):
                     ax2.axhline(y=team_avg_spd, color='blue', linestyle='--', alpha=0.5, label='Team Avg')
                 
-                # 🌟 升級：移除數字顯示，並加上 margins 防裁切
                 ax2.margins(x=0.1)
                 ax2.set_ylim(0, 100)
                 ax2.legend(loc='lower right')
                 st.pyplot(fig2)
 
             with col2:
-                st.subheader("3️⃣ 單節/分段 體能維持率")
-                is_training = 'training' in selected_session.lower()
-                if is_training:
-                    quarter_sessions = [s for s in sessions_for_date if 'training' in str(s).lower() and str(s).split()[-1].isdigit()]
-                else:
-                    quarter_sessions = [s for s in sessions_for_date if 'training' not in str(s).lower() and str(s).split()[-1].isdigit()]
-
-                quarter_sessions = sorted(quarter_sessions)
-
-                if len(quarter_sessions) > 0:
-                    df_q = df[df['Session'].isin(quarter_sessions)]
-                    players = sorted(df_q['Player'].unique())
-                    fig3_q, ax3_q = plt.subplots(figsize=(6, 4))
-                    x = np.arange(len(players))
-                    width = 0.8 / len(quarter_sessions)
-                    colors = ['#6fa8dc', '#f6b26b', '#93c47d', '#ffd966']
+                is_custom_or_auto = selected_date in custom_and_auto_names
+                
+                if is_custom_or_auto:
+                    st.subheader(f"3️⃣ {selected_date} 每日負荷消長")
                     
-                    for i, q_sess in enumerate(quarter_sessions):
-                        q_data = df_q[df_q['Session'] == q_sess]
-                        y_vals = [q_data[q_data['Player'] == p]['Total Distance (m)'].max() if not q_data[q_data['Player'] == p].empty else 0 for p in players]
-                        offset = i * width - (0.8/2) + (width/2)
-                        bars_q = ax3_q.bar(x + offset, y_vals, width, label=f"{q_sess}", color=colors[i%len(colors)])
+                    if selected_date in st.session_state['custom_periods']:
+                        target_dates = st.session_state['custom_periods'][selected_date]
+                    elif selected_date == 'Q1 (1-3月)':
+                        target_dates = df[df['Month'].isin([1, 2, 3])]['Date'].unique().tolist()
+                    elif '月份' in selected_date:
+                        m = int(selected_date.replace('月份', ''))
+                        target_dates = df[df['Month'] == m]['Date'].unique().tolist()
+                    else:
+                        target_dates = []
                         
-                    team_avg_q_dist = df_q['Total Distance (m)'].mean()
-                    if pd.notna(team_avg_q_dist):
-                        ax3_q.axhline(team_avg_q_dist, color='blue', linestyle='--', label='Session Avg')
-                        
-                    ax3_q.set_xticks(x)
-                    ax3_q.set_xticklabels(players)
+                    target_dates = [d for d in target_dates if d not in custom_and_auto_names and '/' in str(d)]
                     
-                    # 🌟 升級：移除數字顯示，加上 margins
-                    ax3_q.margins(x=0.05)
-                    ax3_q.set_ylim(0, 1500)
-                    ax3_q.legend(loc='upper right', fontsize='small')
-                    st.pyplot(fig3_q)
+                    df_q = df[(df['Date'].isin(target_dates)) & (df['Session'].str.lower().str.contains('total'))]
+                    
+                    if not df_q.empty:
+                        daily_sessions = sorted(df_q['Date'].unique().tolist())
+                        players = sorted(df_q['Player'].unique())
+                        fig3_q, ax3_q = plt.subplots(figsize=(6, 4))
+                        x = np.arange(len(players))
+                        width = 0.8 / len(daily_sessions) if len(daily_sessions) > 0 else 0.8
+                        colors = ['#6fa8dc', '#f6b26b', '#93c47d', '#ffd966', '#c27ba0', '#8e7cc3']
+                        
+                        for i, d_date in enumerate(daily_sessions):
+                            d_data = df_q[df_q['Date'] == d_date]
+                            y_vals = [d_data[d_data['Player'] == p]['Total Distance (m)'].max() if not d_data[d_data['Player'] == p].empty else 0 for p in players]
+                            offset = i * width - (0.8/2) + (width/2)
+                            ax3_q.bar(x + offset, y_vals, width, label=f"{d_date}", color=colors[i%len(colors)])
+                            
+                        team_avg_q_dist = df_q['Total Distance (m)'].mean()
+                        if pd.notna(team_avg_q_dist):
+                            ax3_q.axhline(team_avg_q_dist, color='blue', linestyle='--', label='Period Daily Avg')
+                            
+                        ax3_q.set_xticks(x)
+                        ax3_q.set_xticklabels(players)
+                        ax3_q.margins(x=0.05)
+                        
+                        # 同步套用階梯式 Y 軸給每日負荷圖
+                        max_y = df_q['Total Distance (m)'].max()
+                        if pd.notna(max_y) and max_y >= 0:
+                            y_max = (int(max_y) // 10000 + 1) * 10000
+                        else:
+                            y_max = 10000
+                        ax3_q.set_ylim(0, y_max)
+                            
+                        ax3_q.legend(loc='upper right', fontsize='small')
+                        st.pyplot(fig3_q)
+                    else:
+                        st.info("💡 此週期內找不到每日的 Total 資料來進行拆解。")
+                        
                 else:
-                    st.info("💡 此時段無單節資料或為週期加總資料。")
+                    st.subheader("3️⃣ 單節/分段 體能維持率")
+                    is_training = 'training' in selected_session.lower()
+                    if is_training:
+                        quarter_sessions = [s for s in sessions_for_date if 'training' in str(s).lower() and str(s).split()[-1].isdigit()]
+                    else:
+                        quarter_sessions = [s for s in sessions_for_date if 'training' not in str(s).lower() and str(s).split()[-1].isdigit()]
+
+                    quarter_sessions = sorted(quarter_sessions)
+
+                    if len(quarter_sessions) > 0:
+                        df_q = df[df['Session'].isin(quarter_sessions)]
+                        players = sorted(df_q['Player'].unique())
+                        fig3_q, ax3_q = plt.subplots(figsize=(6, 4))
+                        x = np.arange(len(players))
+                        width = 0.8 / len(quarter_sessions)
+                        colors = ['#6fa8dc', '#f6b26b', '#93c47d', '#ffd966']
+                        
+                        for i, q_sess in enumerate(quarter_sessions):
+                            q_data = df_q[df_q['Session'] == q_sess]
+                            y_vals = [q_data[q_data['Player'] == p]['Total Distance (m)'].max() if not q_data[q_data['Player'] == p].empty else 0 for p in players]
+                            offset = i * width - (0.8/2) + (width/2)
+                            ax3_q.bar(x + offset, y_vals, width, label=f"{q_sess}", color=colors[i%len(colors)])
+                            
+                        team_avg_q_dist = df_q['Total Distance (m)'].mean()
+                        if pd.notna(team_avg_q_dist):
+                            ax3_q.axhline(team_avg_q_dist, color='blue', linestyle='--', label='Session Avg')
+                            
+                        ax3_q.set_xticks(x)
+                        ax3_q.set_xticklabels(players)
+                        ax3_q.margins(x=0.05)
+                        ax3_q.set_ylim(0, 1500)
+                        ax3_q.legend(loc='upper right', fontsize='small')
+                        st.pyplot(fig3_q)
+                    else:
+                        st.info("💡 此時段無單節資料或為單日加總資料。")
 
             st.write("<br>", unsafe_allow_html=True)
             st.subheader("4️⃣ 爆發力象限圖 (Plotly 互動版)")
@@ -304,6 +358,14 @@ else:
         player_dates_with_total = df_total_only[df_total_only['Player'] == selected_player]['Date'].dropna().unique().tolist()
         all_total_dates = df_total_only['Date'].dropna().unique().tolist()
         
+        for name in reversed(custom_and_auto_names):
+            if name in player_dates_with_total:
+                player_dates_with_total.remove(name)
+                player_dates_with_total.insert(0, name)
+            if name in all_total_dates:
+                all_total_dates.remove(name)
+                all_total_dates.insert(0, name)
+        
         if not player_dates_with_total:
             st.warning(f"💡 找不到 {selected_player} 的 Total 加總數據。")
         else:
@@ -323,7 +385,7 @@ else:
             col_radar, col_bar = st.columns([1, 1.5])
 
             with col_radar:
-                st.markdown(f"##### 📍 六角雷達圖：對標當日團隊平均")
+                st.markdown(f"##### 📍 六角雷達圖：對標當日/當期團隊平均")
                 radar_date = st.selectbox("📅 選擇雷達圖日期：", player_dates_with_total, index=0)
                 
                 team_radar_df = df_total_only[df_total_only['Date'] == radar_date]
@@ -428,9 +490,14 @@ else:
                         axes[i].spines['top'].set_visible(False)
                         axes[i].spines['right'].set_visible(False)
                         
+                        # 🌟 個人報告也套用階梯式動態 Y 軸
                         if 'Total Distance' in title:
                             max_y = max(val_past, val_curr)
-                            axes[i].set_ylim(0, max_y * 1.15 if max_y > 8000 else 10000)
+                            if pd.notna(max_y) and max_y >= 0:
+                                y_max = (int(max_y) // 10000 + 1) * 10000
+                            else:
+                                y_max = 10000
+                            axes[i].set_ylim(0, y_max)
                         elif 'Average Speed' in title:
                             axes[i].set_ylim(0, 100)
                         elif 'Max Speed' in title:
@@ -438,7 +505,6 @@ else:
                         elif 'HSD Ratio' in title:
                             axes[i].set_ylim(0, 20)
                         
-                        # 💡 個人報告因為只有兩根柱子，保留數值顯示比較方便對比
                         for bar in bars:
                             yval = bar.get_height()
                             if pd.notna(yval) and yval > 0:
