@@ -62,14 +62,9 @@ else:
             return 0
     df['Month'] = df['Date'].apply(get_month)
 
-    # ==========================================
-    # 🌟 聚合引擎 (修復雙重計算距離 Bug)
-    # ==========================================
+    # 聚合引擎
     def generate_agg_df(subset_df, period_name):
-        # 🚨 關鍵防呆：只抓取每天的 Total 數據來相加，避免把單節跟全天重複加總！
         daily_totals = subset_df[subset_df['Session'].astype(str).str.contains('Total|total', case=False, na=False)]
-        
-        # 如果該區間沒有 Total 數據才退而求其次
         if daily_totals.empty:
             daily_totals = subset_df
             
@@ -205,7 +200,6 @@ else:
                         target_dates = []
                         
                     target_dates = [d for d in target_dates if d not in custom_and_auto_names and '/' in str(d)]
-                    # 強制防呆搜尋，確保抓得到 Total
                     df_q = df[(df['Date'].isin(target_dates)) & (df['Session'].astype(str).str.contains('Total|total', case=False, na=False))]
                     
                     if not df_q.empty:
@@ -332,13 +326,11 @@ else:
         all_players = sorted(df['Player'].unique().tolist())
         selected_player = st.sidebar.selectbox("🏃 選擇選手：", all_players)
         
-        # 🚨 超強防呆過濾：保證大小寫通吃且避開空值
         df_total_only = df[df['Session'].astype(str).str.contains('Total|total', case=False, na=False)]
         
         player_dates_with_total = df_total_only[df_total_only['Player'] == selected_player]['Date'].dropna().unique().tolist()
         all_total_dates = df_total_only['Date'].dropna().unique().tolist()
         
-        # 🌟 強制將「週期加總」與自動化月份排在下拉選單最上方
         for name in reversed(custom_and_auto_names):
             if name in player_dates_with_total:
                 player_dates_with_total.remove(name)
@@ -411,65 +403,112 @@ else:
                 ax_r.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
                 st.pyplot(fig_r)
 
+            # ==========================================
+            # 🌟 全新升級：雙期 / 三期動態切換比較
+            # ==========================================
             with col_bar:
                 st.markdown("##### 📈 歷史進步軌跡")
-                col_b1, col_b2 = st.columns(2)
-                with col_b1: 
-                    player_selected_date = st.selectbox("📅 當前表現 (Current)：", player_dates_with_total)
-                with col_b2:
-                    selected_baseline = st.selectbox("📉 比較基準 (Baseline)：", ["NCAA Benchmark"] + all_total_dates)
                 
+                # 建立切換開關
+                compare_mode = st.radio("📊 選擇比較模式：", ["雙期比較 (2個數據)", "三期比較 (3個數據)"], horizontal=True)
+                
+                # 根據選擇的模式渲染不同數量的下拉選單
+                if compare_mode == "雙期比較 (2個數據)":
+                    col_b1, col_b2 = st.columns(2)
+                    with col_b1: 
+                        player_selected_date = st.selectbox("📅 當前表現 (Current)：", player_dates_with_total)
+                    with col_b2:
+                        selected_baseline1 = st.selectbox("📉 比較基準 (Baseline)：", ["NCAA Benchmark"] + all_total_dates)
+                    selected_baseline2 = None
+                else:
+                    col_b1, col_b2, col_b3 = st.columns(3)
+                    with col_b1: 
+                        player_selected_date = st.selectbox("📅 當前表現 (Current)：", player_dates_with_total)
+                    with col_b2:
+                        selected_baseline1 = st.selectbox("📉 比較基準 1 (Baseline 1)：", ["NCAA Benchmark"] + all_total_dates)
+                    with col_b3:
+                        # 自動幫基準2選擇第二個選項(如果有的話)
+                        default_b2_idx = 1 if len(all_total_dates) > 1 else 0
+                        selected_baseline2 = st.selectbox("📉 比較基準 2 (Baseline 2)：", ["NCAA Benchmark"] + all_total_dates, index=default_b2_idx)
+
+                # 抓取「當前表現」的數據
                 player_current_bar = df_total_only[(df_total_only['Player'] == selected_player) & (df_total_only['Date'] == player_selected_date)].iloc[0]
                 current_label = f"{player_selected_date} (當前)"
-                can_plot = False
                 
-                if selected_baseline == "NCAA Benchmark":
-                    ncaa_target = NCAA_BASELINES[selected_ncaa]
-                    past_avg = {
-                        'Total Distance (m)': ncaa_target['dist'], 'Avg Speed (m/min)': ncaa_target['avg_spd'],
-                        'Top Speed (m/s)': ncaa_target['top_spd'], 'HSD Ratio': ncaa_target['hsd_ratio'] / 100 
-                    }
-                    baseline_label = f"NCAA {selected_ncaa} (基準)"
-                    can_plot = True
-                else:
-                    past_data = df_total_only[(df_total_only['Player'] == selected_player) & (df_total_only['Date'] == selected_baseline)]
-                    if not past_data.empty:
-                        past_avg = past_data[['Total Distance (m)', 'Avg Speed (m/min)', 'Top Speed (m/s)', 'HSD Ratio']].mean()
-                        baseline_label = f"{selected_baseline} (基準)"
-                        can_plot = True
+                # 建立一個通用函數來抓取「基準」的數據
+                def get_baseline_data(b_name):
+                    if b_name == "NCAA Benchmark":
+                        ncaa_target = NCAA_BASELINES[selected_ncaa]
+                        return {
+                            'Total Distance (m)': ncaa_target['dist'],
+                            'Avg Speed (m/min)': ncaa_target['avg_spd'],
+                            'Top Speed (m/s)': ncaa_target['top_spd'],
+                            'HSD Ratio': ncaa_target['hsd_ratio'] / 100 
+                        }, f"NCAA {selected_ncaa} (基準)"
                     else:
-                        st.info(f"💡 貼心提醒：{selected_player} 在 {selected_baseline} 剛好沒有紀錄喔！")
-                        can_plot = False
+                        past_data = df_total_only[(df_total_only['Player'] == selected_player) & (df_total_only['Date'] == b_name)]
+                        if not past_data.empty:
+                            return past_data[['Total Distance (m)', 'Avg Speed (m/min)', 'Top Speed (m/s)', 'HSD Ratio']].mean(), f"{b_name} (基準)"
+                        else:
+                            return None, f"{b_name} (無資料)"
 
-                if can_plot:
-                    fig_b, axes = plt.subplots(1, 4, figsize=(10, 4))
-                    metrics = [
-                        ('Total Distance', 'Total Distance (m)', '#e06666', '#ea9999'),
-                        ('Average Speed', 'Avg Speed (m/min)', '#c27ba0', '#d5a6bd'),
-                        ('Max Speed', 'Top Speed (m/s)', '#f6b26b', '#fce5cd'),
-                        ('HSD Ratio (%)', 'HSD Ratio', '#93c47d', '#d9ead3')
-                    ]
+                b1_data, b1_label = get_baseline_data(selected_baseline1)
+                b2_data, b2_label = None, None
+                if selected_baseline2:
+                    b2_data, b2_label = get_baseline_data(selected_baseline2)
+
+                # 防呆提醒：如果有選到沒資料的日期，跳出警告
+                warnings = []
+                if b1_data is None: warnings.append(f"💡 貼心提醒：{selected_player} 在 {selected_baseline1} 剛好沒有紀錄。")
+                if selected_baseline2 and b2_data is None: warnings.append(f"💡 貼心提醒：{selected_player} 在 {selected_baseline2} 剛好沒有紀錄。")
+                for w in warnings: st.info(w)
+
+                # 開始畫長條圖
+                fig_b, axes = plt.subplots(1, 4, figsize=(10, 4))
+                
+                # 定義漸層配色：淺(最舊) -> 中(過去) -> 深(現在)
+                metrics = [
+                    ('Total Distance', 'Total Distance (m)', ['#f4cccc', '#ea9999', '#e06666']),
+                    ('Average Speed', 'Avg Speed (m/min)', ['#ead1dc', '#d5a6bd', '#c27ba0']),
+                    ('Max Speed', 'Top Speed (m/s)', ['#fff2cc', '#fce5cd', '#f6b26b']),
+                    ('HSD Ratio (%)', 'HSD Ratio', ['#eff5e1', '#d9ead3', '#93c47d'])
+                ]
+                
+                for i, (title, col_name, color_palette) in enumerate(metrics):
+                    plot_labels = []
+                    plot_vals = []
+                    plot_colors = []
                     
-                    labels = [baseline_label, current_label]
-                    for i, (title, col_name, color_curr, color_past) in enumerate(metrics):
-                        val_past = past_avg[col_name] if pd.notna(past_avg[col_name]) else 0
-                        val_curr = player_current_bar[col_name] if pd.notna(player_current_bar[col_name]) else 0
+                    # 依序加入資料 (Baseline 2 最舊 -> Baseline 1 -> Current)
+                    if b2_data is not None:
+                        plot_labels.append("B2: " + b2_label.split()[0]) # 縮寫標籤避免太長
+                        v = b2_data[col_name] if pd.notna(b2_data[col_name]) else 0
+                        plot_vals.append(v * 100 if 'Ratio' in col_name else v)
+                        plot_colors.append(color_palette[0]) # 最淺色
                         
-                        if 'Ratio' in col_name:
-                            val_past *= 100
-                            val_curr *= 100
-                            
-                        bars = axes[i].bar(labels, [val_past, val_curr], color=[color_past, color_curr], width=0.6)
-                        axes[i].set_title(title, fontweight='bold', fontsize=11)
-                        axes[i].spines['top'].set_visible(False)
-                        axes[i].spines['right'].set_visible(False)
+                    if b1_data is not None:
+                        plot_labels.append("B1: " + b1_label.split()[0])
+                        v = b1_data[col_name] if pd.notna(b1_data[col_name]) else 0
+                        plot_vals.append(v * 100 if 'Ratio' in col_name else v)
+                        plot_colors.append(color_palette[1] if b2_data is not None else color_palette[0]) # 中間色 (如果是雙期就用淺色)
                         
+                    # 加入 Current
+                    plot_labels.append("Curr: " + current_label.split()[0])
+                    v = player_current_bar[col_name] if pd.notna(player_current_bar[col_name]) else 0
+                    plot_vals.append(v * 100 if 'Ratio' in col_name else v)
+                    plot_colors.append(color_palette[2]) # 最深色
+                    
+                    # 畫圖
+                    bars = axes[i].bar(plot_labels, plot_vals, color=plot_colors, width=0.6)
+                    axes[i].set_title(title, fontweight='bold', fontsize=11)
+                    axes[i].spines['top'].set_visible(False)
+                    axes[i].spines['right'].set_visible(False)
+                    
+                    # 套用階梯式 Y 軸
+                    if plot_vals:
+                        max_y = max(plot_vals)
                         if 'Total Distance' in title:
-                            max_y = max(val_past, val_curr)
-                            if pd.notna(max_y) and max_y >= 0:
-                                y_max = (int(max_y) // 10000 + 1) * 10000
-                            else:
-                                y_max = 10000
+                            y_max = (int(max_y) // 10000 + 1) * 10000 if pd.notna(max_y) and max_y >= 0 else 10000
                             axes[i].set_ylim(0, y_max)
                         elif 'Average Speed' in title:
                             axes[i].set_ylim(0, 100)
@@ -477,12 +516,13 @@ else:
                             axes[i].set_ylim(0, 12)
                         elif 'HSD Ratio' in title:
                             axes[i].set_ylim(0, 20)
-                        
-                        for bar in bars:
-                            yval = bar.get_height()
-                            if pd.notna(yval) and yval > 0:
-                                format_str = f"{int(yval)}" if 'Distance' in title else f"{yval:.1f}"
-                                axes[i].text(bar.get_x() + bar.get_width()/2, yval + (yval*0.02), format_str, ha='center', va='bottom', fontweight='bold', fontsize=10)
+                    
+                    # 加上數據標籤
+                    for bar in bars:
+                        yval = bar.get_height()
+                        if pd.notna(yval) and yval > 0:
+                            format_str = f"{int(yval)}" if 'Distance' in title else f"{yval:.1f}"
+                            axes[i].text(bar.get_x() + bar.get_width()/2, yval + (yval*0.02), format_str, ha='center', va='bottom', fontweight='bold', fontsize=10)
 
-                    plt.tight_layout()
-                    st.pyplot(fig_b)
+                plt.tight_layout()
+                st.pyplot(fig_b)
