@@ -162,7 +162,7 @@ else:
             ax1.margins(x=0.05)
             max_d = df_plot['Total Distance (m)'].max()
             if pd.notna(max_d) and max_d >= 0:
-                y_max = (int(max_d) // 10000 + 1) * 10000
+                y_max = max(10000, (int(max_d) // 10000 + 1) * 10000)
             else:
                 y_max = 10000
             ax1.set_ylim(0, y_max)
@@ -181,7 +181,11 @@ else:
                     ax2.axhline(y=team_avg_spd, color='blue', linestyle='--', alpha=0.5, label='Team Avg')
                 
                 ax2.margins(x=0.1)
-                ax2.set_ylim(0, 100)
+                # 團隊總覽也套用 Avg Speed 階梯動態 (基礎100，級距20)
+                max_spd = df_plot['Avg Speed (m/min)'].max()
+                y_max_spd = max(100, (int(max_spd) // 20 + 1) * 20) if pd.notna(max_spd) and max_spd >= 0 else 100
+                ax2.set_ylim(0, y_max_spd)
+                
                 ax2.legend(loc='lower right')
                 st.pyplot(fig2)
 
@@ -226,7 +230,7 @@ else:
                         
                         max_y = df_q['Total Distance (m)'].max()
                         if pd.notna(max_y) and max_y >= 0:
-                            y_max = (int(max_y) // 10000 + 1) * 10000
+                            y_max = max(10000, (int(max_y) // 10000 + 1) * 10000)
                         else:
                             y_max = 10000
                         ax3_q.set_ylim(0, y_max)
@@ -266,7 +270,11 @@ else:
                         ax3_q.set_xticks(x)
                         ax3_q.set_xticklabels(players)
                         ax3_q.margins(x=0.05)
-                        ax3_q.set_ylim(0, 1500)
+                        
+                        max_y_q = df_q['Total Distance (m)'].max()
+                        y_max_q = max(1500, (int(max_y_q) // 500 + 1) * 500) if pd.notna(max_y_q) and max_y_q >= 0 else 1500
+                        ax3_q.set_ylim(0, y_max_q)
+                        
                         ax3_q.legend(loc='upper right', fontsize='small')
                         st.pyplot(fig3_q)
                     else:
@@ -404,15 +412,12 @@ else:
                 st.pyplot(fig_r)
 
             # ==========================================
-            # 🌟 全新升級：雙期 / 三期動態切換比較
+            # 🌟 個人報告動態縮放：所有指標全面套用階梯邏輯
             # ==========================================
             with col_bar:
                 st.markdown("##### 📈 歷史進步軌跡")
-                
-                # 建立切換開關
                 compare_mode = st.radio("📊 選擇比較模式：", ["雙期比較 (2個數據)", "三期比較 (3個數據)"], horizontal=True)
                 
-                # 根據選擇的模式渲染不同數量的下拉選單
                 if compare_mode == "雙期比較 (2個數據)":
                     col_b1, col_b2 = st.columns(2)
                     with col_b1: 
@@ -427,15 +432,12 @@ else:
                     with col_b2:
                         selected_baseline1 = st.selectbox("📉 比較基準 1 (Baseline 1)：", ["NCAA Benchmark"] + all_total_dates)
                     with col_b3:
-                        # 自動幫基準2選擇第二個選項(如果有的話)
                         default_b2_idx = 1 if len(all_total_dates) > 1 else 0
                         selected_baseline2 = st.selectbox("📉 比較基準 2 (Baseline 2)：", ["NCAA Benchmark"] + all_total_dates, index=default_b2_idx)
 
-                # 抓取「當前表現」的數據
                 player_current_bar = df_total_only[(df_total_only['Player'] == selected_player) & (df_total_only['Date'] == player_selected_date)].iloc[0]
                 current_label = f"{player_selected_date} (當前)"
                 
-                # 建立一個通用函數來抓取「基準」的數據
                 def get_baseline_data(b_name):
                     if b_name == "NCAA Benchmark":
                         ncaa_target = NCAA_BASELINES[selected_ncaa]
@@ -457,16 +459,13 @@ else:
                 if selected_baseline2:
                     b2_data, b2_label = get_baseline_data(selected_baseline2)
 
-                # 防呆提醒：如果有選到沒資料的日期，跳出警告
                 warnings = []
                 if b1_data is None: warnings.append(f"💡 貼心提醒：{selected_player} 在 {selected_baseline1} 剛好沒有紀錄。")
                 if selected_baseline2 and b2_data is None: warnings.append(f"💡 貼心提醒：{selected_player} 在 {selected_baseline2} 剛好沒有紀錄。")
                 for w in warnings: st.info(w)
 
-                # 開始畫長條圖
                 fig_b, axes = plt.subplots(1, 4, figsize=(10, 4))
                 
-                # 定義漸層配色：淺(最舊) -> 中(過去) -> 深(現在)
                 metrics = [
                     ('Total Distance', 'Total Distance (m)', ['#f4cccc', '#ea9999', '#e06666']),
                     ('Average Speed', 'Avg Speed (m/min)', ['#ead1dc', '#d5a6bd', '#c27ba0']),
@@ -479,45 +478,46 @@ else:
                     plot_vals = []
                     plot_colors = []
                     
-                    # 依序加入資料 (Baseline 2 最舊 -> Baseline 1 -> Current)
                     if b2_data is not None:
-                        plot_labels.append("B2: " + b2_label.split()[0]) # 縮寫標籤避免太長
+                        plot_labels.append("B2: " + b2_label.split()[0])
                         v = b2_data[col_name] if pd.notna(b2_data[col_name]) else 0
                         plot_vals.append(v * 100 if 'Ratio' in col_name else v)
-                        plot_colors.append(color_palette[0]) # 最淺色
+                        plot_colors.append(color_palette[0]) 
                         
                     if b1_data is not None:
                         plot_labels.append("B1: " + b1_label.split()[0])
                         v = b1_data[col_name] if pd.notna(b1_data[col_name]) else 0
                         plot_vals.append(v * 100 if 'Ratio' in col_name else v)
-                        plot_colors.append(color_palette[1] if b2_data is not None else color_palette[0]) # 中間色 (如果是雙期就用淺色)
+                        plot_colors.append(color_palette[1] if b2_data is not None else color_palette[0])
                         
-                    # 加入 Current
                     plot_labels.append("Curr: " + current_label.split()[0])
                     v = player_current_bar[col_name] if pd.notna(player_current_bar[col_name]) else 0
                     plot_vals.append(v * 100 if 'Ratio' in col_name else v)
-                    plot_colors.append(color_palette[2]) # 最深色
+                    plot_colors.append(color_palette[2]) 
                     
-                    # 畫圖
                     bars = axes[i].bar(plot_labels, plot_vals, color=plot_colors, width=0.6)
                     axes[i].set_title(title, fontweight='bold', fontsize=11)
                     axes[i].spines['top'].set_visible(False)
                     axes[i].spines['right'].set_visible(False)
                     
-                    # 套用階梯式 Y 軸
+                    # 🎯 個人報告：全指標套用階梯式動態天花板邏輯
                     if plot_vals:
                         max_y = max(plot_vals)
-                        if 'Total Distance' in title:
-                            y_max = (int(max_y) // 10000 + 1) * 10000 if pd.notna(max_y) and max_y >= 0 else 10000
+                        if pd.notna(max_y) and max_y >= 0:
+                            if 'Total Distance' in title:
+                                # 基礎 10000，每萬一階
+                                y_max = max(10000, (int(max_y) // 10000 + 1) * 10000)
+                            elif 'Average Speed' in title:
+                                # 基礎 100，每20一階
+                                y_max = max(100, (int(max_y) // 20 + 1) * 20)
+                            elif 'Max Speed' in title:
+                                # 基礎 10，每2一階
+                                y_max = max(10, (int(max_y) // 2 + 1) * 2)
+                            elif 'HSD Ratio' in title:
+                                # 基礎 20，每10一階
+                                y_max = max(20, (int(max_y) // 10 + 1) * 10)
                             axes[i].set_ylim(0, y_max)
-                        elif 'Average Speed' in title:
-                            axes[i].set_ylim(0, 100)
-                        elif 'Max Speed' in title:
-                            axes[i].set_ylim(0, 12)
-                        elif 'HSD Ratio' in title:
-                            axes[i].set_ylim(0, 20)
                     
-                    # 加上數據標籤
                     for bar in bars:
                         yval = bar.get_height()
                         if pd.notna(yval) and yval > 0:
