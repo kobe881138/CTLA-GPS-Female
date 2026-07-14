@@ -7,6 +7,7 @@ import matplotlib.font_manager as fm
 import plotly.graph_objects as go
 import os
 import shutil
+import io # 🌟 新增：用於在背景處理高畫質圖片下載
 
 # ==========================================
 # 🌟 終極防破圖系統：暴力清快取 + 絕對路徑字體
@@ -38,6 +39,24 @@ NCAA_BASELINES = {
     'M': {'dist': 4952, 'avg_spd': 82.53, 'top_spd': 6.9, 'hsd_ratio': 17.06},
     'D': {'dist': 4579, 'avg_spd': 76.32, 'top_spd': 6.5, 'hsd_ratio': 9.00}
 }
+
+# ==========================================
+# 🌟 輔助函數：智慧階梯算法 & 圖片下載轉換器 (從男生代碼移植，解決標籤擋圖問題)
+# ==========================================
+def get_dist_ymax(max_val):
+    if pd.isna(max_val) or max_val <= 0: return 2000
+    if max_val <= 2000: return 2000
+    elif max_val <= 4000: return 4000
+    elif max_val <= 6000: return 6000
+    elif max_val <= 8000: return 8000
+    elif max_val <= 10000: return 10000
+    else: return (int(max_val) // 10000 + 1) * 10000
+
+def get_img_buffer(fig):
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=300) 
+    buf.seek(0)
+    return buf
 
 st.set_page_config(page_title="女網 GPS 數據儀表板", layout="wide")
 
@@ -78,6 +97,10 @@ else:
         if 'RPE' in daily_totals.columns: agg_funcs['RPE'] = 'mean'
         
         agg = daily_totals.groupby('Player').agg(agg_funcs).reset_index()
+        
+        if 'RPE' in agg.columns:
+            agg['RPE'] = agg['RPE'].round(1)
+            
         agg['Date'] = period_name
         agg['Session'] = period_name + ' Total'
         return agg
@@ -159,21 +182,25 @@ else:
             if pd.notna(team_avg_dist):
                 ax1.axhline(y=team_avg_dist, color='blue', linestyle='--', label='Team Avg')
             
+            # 🌟 新增：疊加距離與 RPE 文字標籤 (從男生代碼移植)
+            for bar in bars1:
+                yval = bar.get_height()
+                if pd.notna(yval) and yval > 0:
+                    ax1.text(bar.get_x() + bar.get_width()/2, yval/2 + 200, int(yval), ha='center', va='center', color='white', fontweight='bold', fontsize=12)
+                    if 'RPE' in df_plot.columns:
+                        rpe_val = df_plot.loc[df_plot['Total Distance (m)'] == yval, 'RPE'].values[0]
+                        if pd.notna(rpe_val) and rpe_val > 0:
+                            ax1.text(bar.get_x() + bar.get_width()/2, yval/2 - 200, f"RPE: {rpe_val}", ha='center', va='center', color='#ffd966', fontweight='bold', fontsize=11)
+            
             ax1.margins(x=0.05)
-            max_d = df_plot['Total Distance (m)'].max()
-            if pd.notna(max_d) and max_d >= 0:
-                y_max = max(10000, (int(max_d) // 10000 + 1) * 10000)
-            else:
-                y_max = 10000
-            ax1.set_ylim(0, y_max)
+            # 🌟 新增：使用動態 Y 軸高度上限，防止文字被天花板擠壓
+            ax1.set_ylim(0, get_dist_ymax(df_plot['Total Distance (m)'].max()))
             ax1.legend()
             st.pyplot(fig1)
+            st.download_button(label="📥 下載圖表 (外部與內部負荷)", data=get_img_buffer(fig1), file_name=f"Total_Distance_{selected_session}.png", mime="image/png")
 
             col1, col2 = st.columns(2)
             with col1:
-                # ==========================================
-                # 🌟 升級功能：平均速度多日比較選擇器
-                # ==========================================
                 st.subheader("2️⃣ 平均速度表現 (vs. NCAA Avg)")
                 spd_mode = st.radio("顯示模式：", ["📌 當前時段", "📅 多日比較 (最多5天)"], horizontal=True, key='spd_mode')
                 
@@ -192,8 +219,8 @@ else:
                     ax2.set_ylim(0, y_max_spd)
                     ax2.legend(loc='lower right')
                     st.pyplot(fig2)
+                    st.download_button(label="📥 下載圖表 (平均速度)", data=get_img_buffer(fig2), file_name=f"Avg_Speed_{selected_session}.png", mime="image/png")
                 else:
-                    # 多日比較模式
                     valid_dates = [d for d in df['Date'].unique() if '/' in str(d) and d not in custom_and_auto_names]
                     default_d = selected_date if selected_date in valid_dates else valid_dates[-1] if valid_dates else None
                     
@@ -226,6 +253,7 @@ else:
                             ax2.set_ylim(0, y_max_spd)
                             ax2.legend(loc='lower right', fontsize='small')
                             st.pyplot(fig2)
+                            st.download_button(label="📥 下載圖表 (平均速度比較)", data=get_img_buffer(fig2), file_name="Avg_Speed_Compare.png", mime="image/png")
                         else:
                             st.info("💡 找不到所選日期的 Total 數據來進行比較。")
                     else:
@@ -270,14 +298,11 @@ else:
                         ax3_q.set_xticklabels(players)
                         ax3_q.margins(x=0.05)
                         
-                        max_y = df_q['Total Distance (m)'].max()
-                        if pd.notna(max_y) and max_y >= 0:
-                            y_max = max(10000, (int(max_y) // 10000 + 1) * 10000)
-                        else:
-                            y_max = 10000
-                        ax3_q.set_ylim(0, y_max)
+                        # 🌟 新增：使用動態邊界防止圖例擋圖
+                        ax3_q.set_ylim(0, get_dist_ymax(df_q['Total Distance (m)'].max()))
                         ax3_q.legend(loc='upper right', fontsize='small')
                         st.pyplot(fig3_q)
+                        st.download_button(label="📥 下載圖表 (每日負荷)", data=get_img_buffer(fig3_q), file_name=f"Daily_Load_{selected_date}.png", mime="image/png")
                     else:
                         st.info("💡 此週期內找不到每日的 Total 資料來進行拆解。")
                         
@@ -313,12 +338,12 @@ else:
                         ax3_q.set_xticklabels(players)
                         ax3_q.margins(x=0.05)
                         
-                        max_y_q = df_q['Total Distance (m)'].max()
-                        y_max_q = max(1500, (int(max_y_q) // 500 + 1) * 500) if pd.notna(max_y_q) and max_y_q >= 0 else 1500
-                        ax3_q.set_ylim(0, y_max_q)
+                        # 🌟 新增：使用動態邊界防止圖例擋圖
+                        ax3_q.set_ylim(0, get_dist_ymax(df_q['Total Distance (m)'].max()))
                         
                         ax3_q.legend(loc='upper right', fontsize='small')
                         st.pyplot(fig3_q)
+                        st.download_button(label="📥 下載圖表 (體能維持)", data=get_img_buffer(fig3_q), file_name=f"Fitness_Maintenance_{selected_date}.png", mime="image/png")
                     else:
                         st.info("💡 此時段無單節資料或為單日加總資料。")
 
@@ -352,17 +377,39 @@ else:
                 for p in ['A', 'M', 'D']:
                     fig4.add_trace(go.Scatter(
                         x=[NCAA_BASELINES[p]['hsd_ratio']], y=[NCAA_BASELINES[p]['top_spd']], mode='markers',
-                        marker=dict(color=pos_colors[p], symbol='star', size=18, line=dict(width=1, color='darkgray')), name=f'NCAA {p}',
+                        marker=dict(color=pos_colors[p], symbol='star', size=16, line=dict(width=1, color='darkgray')), name=f'NCAA {p}',
                         hovertemplate=f'<b>NCAA {p}</b><br>HSD Ratio: %{{x:.1f}}%<br>Top Speed: %{{y:.1f}} m/s<extra></extra>'
                     ))
 
+                # 🌟 新增：計算 Plotly 動態邊界，避免星星圖示和文字被裁切
+                max_hsd_data = x_data.max() if not x_data.empty else 0
+                max_top_data = y_data.max() if not y_data.empty else 0
+                max_hsd_ncaa = max([NCAA_BASELINES[p]['hsd_ratio'] for p in ['A', 'M', 'D', 'Average']])
+                max_top_ncaa = max([NCAA_BASELINES[p]['top_spd'] for p in ['A', 'M', 'D', 'Average']])
+                
+                max_hsd_plot = max(max_hsd_data, max_hsd_ncaa)
+                max_top_plot = max(max_top_data, max_top_ncaa)
+                
+                x_max_plot = max(25, (int(max_hsd_plot) // 10 + 1) * 10)
+                y_max_plot = max(10, (int(max_top_plot) // 2 + 1) * 2)
+
                 fig4.update_layout(
                     xaxis_title='<b>HSD (>4m/s) Ratio (%)</b>', yaxis_title='<b>Top Speed (m/s)</b>',
-                    xaxis=dict(range=[0, 25]), yaxis=dict(range=[0, 10]),
+                    xaxis=dict(range=[0, x_max_plot]), yaxis=dict(range=[0, y_max_plot]),
                     margin=dict(l=20, r=20, t=30, b=20), hovermode='closest',
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                 )
-                st.plotly_chart(fig4, use_container_width=True)
+                
+                # 🌟 新增：啟動工具列與下載配置 (從男生代碼移植)
+                st.plotly_chart(
+                    fig4, 
+                    use_container_width=True, 
+                    config={
+                        'editable': True,  
+                        'displayModeBar': True,
+                        'toImageButtonOptions': {'format': 'png', 'filename': 'Womens_GPS_Scatter', 'scale': 3} 
+                    }
+                )
         else:
             st.warning("此時段沒有數據喔！")
 
@@ -452,6 +499,7 @@ else:
                 ax_r.fill(angles, player_ratios, color='#4a86e8', alpha=0.3)
                 ax_r.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
                 st.pyplot(fig_r)
+                st.download_button(label="📥 下載雷達圖", data=get_img_buffer(fig_r), file_name=f"{selected_player}_Radar.png", mime="image/png")
 
             with col_bar:
                 st.markdown("##### 📈 歷史進步軌跡")
@@ -543,14 +591,17 @@ else:
                         max_y = max(plot_vals)
                         if pd.notna(max_y) and max_y >= 0:
                             if 'Total Distance' in title:
-                                y_max = max(10000, (int(max_y) // 10000 + 1) * 10000)
+                                # 🌟 新增：個人長條圖也套用動態邊界算法，讓字不會被天花板吃掉
+                                axes[i].set_ylim(0, get_dist_ymax(max_y))
                             elif 'Average Speed' in title:
                                 y_max = max(100, (int(max_y) // 20 + 1) * 20)
+                                axes[i].set_ylim(0, y_max)
                             elif 'Max Speed' in title:
                                 y_max = max(10, (int(max_y) // 2 + 1) * 2)
+                                axes[i].set_ylim(0, y_max)
                             elif 'HSD Ratio' in title:
                                 y_max = max(20, (int(max_y) // 10 + 1) * 10)
-                            axes[i].set_ylim(0, y_max)
+                                axes[i].set_ylim(0, y_max)
                     
                     for bar in bars:
                         yval = bar.get_height()
@@ -560,3 +611,4 @@ else:
 
                 plt.tight_layout()
                 st.pyplot(fig_b)
+                st.download_button(label="📥 下載長條圖 (歷史進步軌跡)", data=get_img_buffer(fig_b), file_name=f"{selected_player}_History.png", mime="image/png")
